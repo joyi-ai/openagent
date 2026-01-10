@@ -60,8 +60,9 @@ function parse(value: string) {
 }
 
 function workspaceStorage(dir: string) {
-  const head = dir.slice(0, 12) || "workspace"
-  const sum = checksum(dir) ?? "0"
+  const safeDir = typeof dir === "string" ? dir : ""
+  const head = safeDir.slice(0, 12) || "workspace"
+  const sum = checksum(safeDir) ?? "0"
   return `opencode.workspace.${head}.${sum}.dat`
 }
 

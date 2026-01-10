@@ -28,6 +28,7 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   )
 }
 
+
 let update: Update | null = null
 
 const platform: Platform = {
@@ -256,8 +257,14 @@ const platform: Platform = {
       .catch(() => undefined)
   },
 
-  // @ts-expect-error
-  fetch: tauriFetch,
+  // Use native fetch for localhost (works better on Windows), tauriFetch for remote
+  fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+    if (url.includes("localhost") || url.includes("127.0.0.1")) {
+      return fetch(input, init)
+    }
+    return tauriFetch(input as Parameters<typeof tauriFetch>[0], init)
+  }) as typeof fetch,
 
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     return invoke<T>(cmd, args)
