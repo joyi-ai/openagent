@@ -14,7 +14,11 @@ export class AudioCapture {
   private onAudioChunk: AudioChunkCallback | null = null
   private onAudioLevel: AudioLevelCallback | null = null
 
-  async start(onAudioChunk: AudioChunkCallback, onAudioLevel?: AudioLevelCallback): Promise<void> {
+  async start(
+    onAudioChunk: AudioChunkCallback,
+    onAudioLevel?: AudioLevelCallback,
+    deviceId?: string | null,
+  ): Promise<void> {
     if (this.audioContext) {
       throw new Error("AudioCapture already started")
     }
@@ -30,6 +34,7 @@ export class AudioCapture {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
     })
 

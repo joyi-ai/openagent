@@ -913,12 +913,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setStore("killBuffer", text.slice(start, end))
   }
 
-  const abort = () =>
+  const abort = () => {
+    const sessionID = effectiveSessionId()
+    if (!sessionID) return
     sdk.client.session
       .abort({
-        sessionID: params.id!,
+        sessionID,
       })
       .catch(() => {})
+  }
 
   const addToHistory = (prompt: Prompt, mode: "normal" | "shell") => {
     const text = prompt
@@ -1286,6 +1289,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
       if (!existing) return
 
+      const action = prompt.action.current()
+      const actionSession = action?.sessionID
+      const actionMatches = !!(action && actionSession === existing.id)
+      if (action && !actionMatches) {
+        prompt.action.clear()
+      }
+      const activeAction = actionMatches ? action : undefined
+
       const toAbsolutePath = (path: string) => (path.startsWith("/") ? path : sync.absolute(path))
       const fileAttachments = currentPrompt.filter(
         (part) => part.type === "file",
@@ -1382,23 +1393,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         console.warn("No agent or model available for prompt submission")
         return
       }
-      const model = {
+      const baseModel = {
         modelID: currentModel.id,
         providerID: currentModel.provider.id,
       }
-      const agent = currentAgent.name
-      const variant = local.model.variant.current()
+      const baseAgent = currentAgent.name
+      const baseVariant = local.model.variant.current()
       const isClaudeCodeMode = local.mode.current()?.id === "claude-code"
-      // Pass thinking and claudeCodeFlow for Claude Code mode (works with both claude-agent and openrouter)
-      const thinking = isClaudeCodeMode ? local.model.thinking.current() : undefined
-      const claudeCodeFlow = isClaudeCodeMode ? true : undefined
+      const baseThinking = isClaudeCodeMode ? local.model.thinking.current() : undefined
+      const baseClaudeCodeFlow = isClaudeCodeMode ? true : undefined
 
       if (isShellMode) {
         sdk.client.session
           .shell({
             sessionID: existing.id,
-            agent,
-            model,
+            agent: baseAgent,
+            model: baseModel,
             command: text,
             mode: modePayload(),
           })
@@ -1431,9 +1441,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               sessionID: existing.id,
               command: commandName,
               arguments: args.join(" "),
-              agent,
-              model: `${model.providerID}/${model.modelID}`,
-              variant,
+              agent: baseAgent,
+              model: `${baseModel.providerID}/${baseModel.modelID}`,
+              variant: baseVariant,
               mode: modePayload(),
             })
             .then((response) => {
@@ -1451,6 +1461,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             })
           return
         }
+      }
+
+      const agent = activeAction?.agent ?? baseAgent
+      const model = activeAction?.model ?? baseModel
+      const variant = activeAction?.variant ?? baseVariant
+      const system = activeAction?.system
+      const thinking = activeAction?.thinking ?? baseThinking
+      const claudeCodeFlow = activeAction?.claudeCodeFlow ?? baseClaudeCodeFlow
+
+      const revertSuccess = activeAction
+        ? await sdk.client.session
+            .revert({ sessionID: existing.id, messageID: activeAction.messageID })
+            .then(() => true)
+            .catch((e) => {
+              showToast({
+                variant: "error",
+                title: "Failed to edit message",
+                description: e.message ?? "Please try again.",
+              })
+              return false
+            })
+        : true
+      if (!revertSuccess) return
+      if (activeAction) {
+        prompt.action.clear()
       }
 
       const messageID = Identifier.ascending("message")
@@ -1488,8 +1523,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           messageID,
           parts: requestParts,
           variant,
+          system,
+          thinking,
+          claudeCodeFlow,
           mode: modePayload(),
-          // TODO: thinking and claudeCodeFlow pending SDK regeneration
         })
         .then((response) => {
           const data = response.data

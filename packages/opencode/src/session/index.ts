@@ -423,8 +423,9 @@ export namespace Session {
         limit: input.limit,
         afterID: input.afterID,
       })
+      const ordered = ids.slice().sort((a, b) => a.localeCompare(b))
       const result = [] as MessageV2.WithParts[]
-      for (const id of ids) {
+      for (const id of ordered) {
         result.push(
           await MessageV2.get({
             sessionID: input.sessionID,

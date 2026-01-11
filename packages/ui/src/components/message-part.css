@@ -13,9 +13,7 @@
 }
 
 [data-component="message-actions"] {
-  position: absolute;
-  top: -10px;
-  right: 0;
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -25,12 +23,18 @@
   border: 1px solid var(--border-weaker-base);
   box-shadow: var(--shadow-xs-border);
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   pointer-events: none;
   transition:
     opacity 0.15s ease,
     transform 0.15s ease;
-  z-index: 5;
+}
+
+[data-component="message-actions-row"] {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 32px;
+  margin-top: 6px;
 }
 
 [data-component="message-wrapper"]:hover [data-component="message-actions"],

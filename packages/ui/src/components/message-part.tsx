@@ -34,6 +34,7 @@ import { Card } from "./card"
 import { Icon } from "./icon"
 import { Checkbox } from "./checkbox"
 import { AskUserQuestion } from "./ask-user-question"
+import { PlanReview } from "./plan-review"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
@@ -364,11 +365,13 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
         </Show>
       </div>
       <Show when={hasActions()}>
-        <MessageActions
-          onEdit={actions()?.onEdit}
-          onRetry={actions()?.onRetry}
-          onDelete={actions()?.onDelete}
-        />
+        <div data-component="message-actions-row">
+          <MessageActions
+            onEdit={actions()?.onEdit}
+            onRetry={actions()?.onRetry}
+            onDelete={actions()?.onDelete}
+          />
+        </div>
       </Show>
     </div>
   )
@@ -1059,5 +1062,12 @@ ToolRegistry.register({
   name: "AskUserQuestion",
   render(props) {
     return <AskUserQuestion {...props} />
+  },
+})
+
+ToolRegistry.register({
+  name: "ExitPlanMode",
+  render(props) {
+    return <PlanReview {...props} />
   },
 })

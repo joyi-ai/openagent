@@ -7,6 +7,7 @@ import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { useLayout } from "@/context/layout"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import type { FileDiff } from "@opencode-ai/sdk/v2"
+import type { Message } from "@opencode-ai/sdk/v2/client"
 
 export interface MobileViewProps {
   sessionId?: string
@@ -15,6 +16,11 @@ export interface MobileViewProps {
   diffs: Accessor<FileDiff[]>
   working: Accessor<boolean>
   onUserInteracted?: () => void
+  messageActions?: {
+    onEdit?: (message: Message) => void
+    onRetry?: (message: Message) => void
+    onDelete?: (message: Message) => void
+  }
   newSessionView: () => any
 }
 
@@ -54,6 +60,7 @@ export function MobileView(props: MobileViewProps) {
                 setStore("userInteracted", true)
                 props.onUserInteracted?.()
               }}
+              actions={props.messageActions}
               classes={{
                 root: "min-w-0 w-full relative",
                 content:

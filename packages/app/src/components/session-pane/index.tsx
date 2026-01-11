@@ -17,6 +17,7 @@ import { useHeaderOverlay } from "@/hooks/use-header-overlay"
 import { useSessionMessages } from "@/hooks/use-session-messages"
 import { useSessionSync } from "@/hooks/use-session-sync"
 import { useSessionCommands } from "@/hooks/use-session-commands"
+import { useMessageActions } from "@/hooks/use-message-actions"
 import { ThemeDropup } from "@/components/theme-dropup"
 import { SessionPaneHeader } from "./header"
 import { ReviewPanel } from "./review-panel"
@@ -50,6 +51,7 @@ export function SessionPane(props: SessionPaneProps) {
   const layout = useLayout()
   const dialog = useDialog()
   const multiPane = props.mode === "multi" ? useMultiPane() : undefined
+  const messageActions = useMessageActions()
   const hasMultiplePanes = createMemo(() =>
     props.mode === "multi" && multiPane ? multiPane.panes().length > 1 : false,
   )
@@ -280,6 +282,11 @@ export function SessionPane(props: SessionPaneProps) {
             stepsExpanded={store.stepsExpanded}
             onStepsExpandedToggle={() => setStore("stepsExpanded", (x) => !x)}
             onUserInteracted={() => setStore("userInteracted", true)}
+            actions={{
+              onEdit: messageActions.editMessage,
+              onRetry: messageActions.retryMessage,
+              onDelete: messageActions.deleteMessage,
+            }}
             classes={{
               root: `${sessionTurnPadding()} flex-1 min-w-0`,
               content: sessionTurnPadding(),
@@ -396,6 +403,11 @@ export function SessionPane(props: SessionPaneProps) {
           diffs={diffs}
           working={working}
           onUserInteracted={() => setStore("userInteracted", true)}
+          messageActions={{
+            onEdit: messageActions.editMessage,
+            onRetry: messageActions.retryMessage,
+            onDelete: messageActions.deleteMessage,
+          }}
           newSessionView={NewSessionView}
         />
 

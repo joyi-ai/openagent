@@ -9,6 +9,8 @@ import { AudioCapture, isAudioCaptureSupported } from "@/utils/audio-capture"
 export type ModelStatus = "not-downloaded" | "downloading" | "ready" | "error"
 export type RecordingMode = "toggle" | "push-to-talk"
 
+type AudioDevice = { id: string; label: string }
+
 type SttStatus = {
   modelStatus:
     | { type: "NotDownloaded" }
@@ -16,6 +18,11 @@ type SttStatus = {
     | { type: "Ready" }
     | { type: "Error"; message: string }
   isRecording: boolean
+}
+
+const truncateDeviceId = (value: string) => {
+  if (value.length <= 8) return value
+  return `${value.slice(0, 8)}...`
 }
 
 export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
@@ -34,6 +41,7 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
         keybind: "mod+shift+v",
         hasConfigured: false,
         mode: "toggle" as RecordingMode,
+        deviceId: null as string | null,
       }),
     )
 
@@ -45,9 +53,44 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
     const [lastTranscription, setLastTranscription] = createSignal<string | null>(null)
     const [error, setError] = createSignal<string | null>(null)
     const [audioLevels, setAudioLevels] = createSignal<number[]>([])
+    const [availableDevices, setAvailableDevices] = createSignal<AudioDevice[]>([])
 
     // Audio capture instance
     let audioCapture: AudioCapture | null = null
+
+    const refreshDevices = () => {
+      if (!isAudioCaptureSupported()) return
+      if (typeof navigator.mediaDevices.enumerateDevices !== "function") return
+
+      return navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          const inputs = devices
+            .filter((device) => device.kind === "audioinput")
+            .filter((device) => device.deviceId !== "default")
+            .map((device) => {
+              const label = device.label.trim()
+              const fallback = truncateDeviceId(device.deviceId)
+              return {
+                id: device.deviceId,
+                label: label.length > 0 ? label : fallback,
+              }
+            })
+          setAvailableDevices(inputs)
+
+          const selected = settings.deviceId
+          if (selected && !inputs.some((device) => device.id === selected)) {
+            setSettings("deviceId", null)
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to enumerate audio devices:", err)
+        })
+    }
+
+    onMount(() => {
+      refreshDevices()
+    })
 
     // Initialize on mount for Tauri
     onMount(async () => {
@@ -140,8 +183,10 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
             // Update audio levels for visualization
             setAudioLevels(levels)
           },
+          settings.deviceId,
         )
 
+        refreshDevices()
         setIsRecording(true)
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
@@ -241,6 +286,10 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
       setSettings("mode", mode)
     }
 
+    const setDeviceId = (deviceId: string | null) => {
+      setSettings("deviceId", deviceId)
+    }
+
     return {
       // Settings
       settings: {
@@ -250,6 +299,8 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
         markConfigured,
         mode: () => settings.mode,
         setMode,
+        deviceId: () => settings.deviceId,
+        setDeviceId,
         ready,
       },
 
@@ -262,6 +313,7 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
         lastTranscription,
         error,
         audioLevels,
+        availableDevices,
         isSupported: () => isDesktop && isAudioCaptureSupported(),
       },
 
@@ -272,6 +324,7 @@ export const { use: useVoice, provider: VoiceProvider } = createSimpleContext({
         stopRecording,
         toggle,
         clearTranscription,
+        refreshDevices,
       },
     }
   },

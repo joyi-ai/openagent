@@ -1,9 +1,10 @@
-import { createSignal, Show, Switch, Match } from "solid-js"
+import { createMemo, createSignal, Match, onMount, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
+import { Select } from "@opencode-ai/ui/select"
 import { useVoice, type RecordingMode } from "@/context/voice"
 import { formatKeybind } from "@/context/command"
 import { useKeybindCapture } from "@/hooks/use-keybind-capture"
@@ -13,10 +14,30 @@ export function DialogVoiceSettings() {
   const voice = useVoice()
   const { isCapturing, setIsCapturing, capturedKeybind, handleKeyDown } = useKeybindCapture(voice.settings.keybind())
   const [selectedMode, setSelectedMode] = createSignal<RecordingMode>(voice.settings.mode())
+  const [selectedDevice, setSelectedDevice] = createSignal<string>(voice.settings.deviceId() ?? "default")
+
+  const deviceOptions = createMemo(() => {
+    const devices = voice.state.availableDevices()
+    return [{ id: "default", label: "System Default" }, ...devices.map((device) => ({ id: device.id, label: device.label }))]
+  })
+
+  const currentDevice = createMemo(() => {
+    const options = deviceOptions()
+    const currentId = selectedDevice()
+    const match = options.find((option) => option.id === currentId)
+    if (match) return match
+    return options[0]
+  })
+
+  onMount(() => {
+    voice.actions.refreshDevices()
+  })
 
   const handleSave = () => {
     voice.settings.setKeybind(capturedKeybind())
     voice.settings.setMode(selectedMode())
+    const deviceId = selectedDevice()
+    voice.settings.setDeviceId(deviceId === "default" ? null : deviceId)
     voice.settings.markConfigured()
     dialog.close()
   }
@@ -77,6 +98,36 @@ export function DialogVoiceSettings() {
               </div>
             </Match>
           </Switch>
+        </div>
+
+        {/* Microphone */}
+        <div class="flex flex-col gap-2 pt-2 border-t border-border-base">
+          <div class="text-12-medium text-text-subtle">Microphone</div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1">
+              <Select
+                options={deviceOptions()}
+                current={currentDevice()}
+                value={(option) => option.id}
+                label={(option) => option.label}
+                onSelect={(option) => {
+                  const next = option?.id ?? "default"
+                  setSelectedDevice(next)
+                }}
+                variant="ghost"
+                class="justify-between"
+                disabled={!voice.state.isSupported()}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="small"
+              onClick={() => voice.actions.refreshDevices()}
+              disabled={!voice.state.isSupported()}
+            >
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Keybind Configuration */}

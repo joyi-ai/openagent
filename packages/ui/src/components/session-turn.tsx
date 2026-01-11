@@ -627,11 +627,6 @@ export function SessionTurn(
                     {/* Response */}
                     <Show when={!working() && (response() || hasDiffs())}>
                       <div data-slot="session-turn-summary-section" data-component="message-wrapper" data-role="assistant">
-                        <MessageActions
-                          onEdit={messageActions()?.onEdit}
-                          onRetry={messageActions()?.onRetry}
-                          onDelete={messageActions()?.onDelete}
-                        />
                         <div data-slot="session-turn-summary-header">
                           <h2 data-slot="session-turn-summary-title">Response</h2>
                           <Markdown
@@ -713,6 +708,13 @@ export function SessionTurn(
                             Show more changes ({(msg().summary?.diffs?.length ?? 0) - store.diffLimit})
                           </Button>
                         </Show>
+                        <div data-component="message-actions-row">
+                          <MessageActions
+                            onEdit={messageActions()?.onEdit}
+                            onRetry={messageActions()?.onRetry}
+                            onDelete={messageActions()?.onDelete}
+                          />
+                        </div>
                       </div>
                     </Show>
                     <Show when={error() && !props.stepsExpanded}>
