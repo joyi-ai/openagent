@@ -155,7 +155,7 @@ function MultiPaneContent() {
   const theme = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const [activePaneDraggable, setActivePaneDraggable] = createSignal<string | undefined>(undefined)
-  const dragOverlayBackground = "hsl(from var(--background-base) h s l / 0.35)"
+  const dragOverlayBackground = "hsl(from var(--background-base) h s l / 0.55)"
   const overlayBackground = "hsl(from var(--background-base) h s l / 0.25)"
 
   const isCrisp = () => theme.activeGradientMode() === "crisp"

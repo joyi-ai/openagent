@@ -116,19 +116,20 @@ function readPalette(mode: "light" | "dark", relative = false): RGB[] {
   ]
 }
 
+const BASE_POSITIONS = [
+  { x: 16, y: 14 },
+  { x: 86, y: 16 },
+  { x: 18, y: 88 },
+  { x: 88, y: 88 },
+  { x: 52, y: 54 },
+]
+
 function blobs(colors: RGB[], crisp = false): Blob[] {
   const list: Blob[] = []
-  const base = [
-    { x: 16, y: 14, color: colors[0] },
-    { x: 86, y: 16, color: colors[1] },
-    { x: 18, y: 88, color: colors[2] },
-    { x: 88, y: 88, color: colors[3] },
-    { x: 52, y: 54, color: colors[4] },
-  ]
-
   const blurRange = crisp ? { min: 20, max: 40 } : { min: 120, max: 200 }
 
-  for (const b of base) {
+  for (let i = 0; i < BASE_POSITIONS.length; i++) {
+    const b = BASE_POSITIONS[i]
     const size = Math.round(rand(1020, 1280))
     list.push({
       x: rand(b.x - 6, b.x + 6),
@@ -137,11 +138,29 @@ function blobs(colors: RGB[], crisp = false): Blob[] {
       scale: rand(0.9, 1.15),
       blur: Math.round(rand(blurRange.min, blurRange.max)),
       alpha: rand(0.88, 1.0),
-      color: b.color,
+      color: colors[i],
     })
   }
 
   return list
+}
+
+function updateBlobPositions(
+  setStore: (path: "blobs", index: number, key: keyof Blob, value: number | RGB) => void,
+  colors: RGB[],
+  crisp = false,
+) {
+  const blurRange = crisp ? { min: 20, max: 40 } : { min: 120, max: 200 }
+
+  for (let i = 0; i < BASE_POSITIONS.length; i++) {
+    const b = BASE_POSITIONS[i]
+    setStore("blobs", i, "x", rand(b.x - 5, b.x + 5))
+    setStore("blobs", i, "y", rand(b.y - 5, b.y + 5))
+    setStore("blobs", i, "scale", rand(0.9, 1.15))
+    setStore("blobs", i, "blur", Math.round(rand(blurRange.min, blurRange.max)))
+    setStore("blobs", i, "alpha", rand(0.88, 1.0))
+    setStore("blobs", i, "color", colors[i])
+  }
 }
 
 export const GRAIN_DATA_URI =
@@ -175,9 +194,16 @@ export function ShiftingGradient(props: { class?: string }) {
         theme.previewThemeId(),
       ],
       () => {
-        const palette = readPalette(theme.mode(), isRelative())
-        setStore("palette", palette)
-        setStore("blobs", blobs(palette, isCrisp()))
+        // Wait for CSS custom properties to be applied before reading the new palette
+        requestAnimationFrame(() => {
+          const palette = readPalette(theme.mode(), isRelative())
+          setStore("palette", palette)
+          if (store.blobs.length === 0) {
+            setStore("blobs", blobs(palette, isCrisp()))
+          } else {
+            updateBlobPositions(setStore, palette, isCrisp())
+          }
+        })
       },
       { defer: true },
     ),
@@ -188,7 +214,11 @@ export function ShiftingGradient(props: { class?: string }) {
       () => trigger(),
       () => {
         const palette = store.palette.length > 0 ? store.palette : readPalette(theme.mode(), isRelative())
-        setStore("blobs", blobs(palette, isCrisp()))
+        if (store.blobs.length === 0) {
+          setStore("blobs", blobs(palette, isCrisp()))
+        } else {
+          updateBlobPositions(setStore, palette, isCrisp())
+        }
       },
       { defer: true },
     ),
@@ -207,7 +237,7 @@ export function ShiftingGradient(props: { class?: string }) {
               top: `${item().y}%`,
               transform: `translate3d(-50%, -50%, 0) scale(${item().scale})`,
               transition: store.ready
-                ? "left 1800ms cubic-bezier(0.22, 1, 0.36, 1), top 1800ms cubic-bezier(0.22, 1, 0.36, 1), transform 1800ms cubic-bezier(0.22, 1, 0.36, 1)"
+                ? "left 1000ms cubic-bezier(0.22, 1, 0.36, 1), top 3200ms cubic-bezier(0.22, 1, 0.36, 1), transform 1000ms cubic-bezier(0.22, 1, 0.36, 1)"
                 : "none",
               "will-change": "left, top, transform",
               filter: `blur(${item().blur}px)`,

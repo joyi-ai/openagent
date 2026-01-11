@@ -3,7 +3,13 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useTheme } from "@opencode-ai/ui/theme"
-import type { GradientMode, GradientColor } from "@opencode-ai/ui/theme/context"
+import type { GradientMode, GradientColor, ColorScheme } from "@opencode-ai/ui/theme/context"
+
+const COLOR_SCHEMES: { id: ColorScheme; label: string }[] = [
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "system", label: "System" },
+]
 
 const GRADIENT_MODES: { id: GradientMode; label: string }[] = [
   { id: "soft", label: "Soft" },
@@ -46,7 +52,25 @@ export function ThemeDropup() {
     >
       <div class="flex flex-col gap-1" onMouseLeave={() => theme.cancelPreview()}>
         <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border-weak-base">
-          <div class="text-11-medium text-text-weak px-2 py-1">Gradient</div>
+          <div class="text-11-medium text-text-weak px-2 py-1">Appearance</div>
+          <div class="flex gap-1">
+            <For each={COLOR_SCHEMES}>
+              {(scheme) => {
+                const selected = () => scheme.id === theme.colorScheme()
+                return (
+                  <Button
+                    size="small"
+                    variant={selected() ? "secondary" : "ghost"}
+                    class="flex-1 justify-center px-2"
+                    onClick={() => theme.setColorScheme(scheme.id)}
+                  >
+                    {scheme.label}
+                  </Button>
+                )
+              }}
+            </For>
+          </div>
+          <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Gradient</div>
           <div
             class="flex gap-1"
             onMouseLeave={() => theme.cancelGradientModePreview()}

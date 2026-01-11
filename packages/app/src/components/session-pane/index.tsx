@@ -19,6 +19,7 @@ import { useSessionSync } from "@/hooks/use-session-sync"
 import { useSessionCommands } from "@/hooks/use-session-commands"
 import { useMessageActions } from "@/hooks/use-message-actions"
 import { ThemeDropup } from "@/components/theme-dropup"
+import { useTheme } from "@opencode-ai/ui/theme"
 import { SessionPaneHeader } from "./header"
 import { ReviewPanel } from "./review-panel"
 import { ContextTab } from "./context-tab"
@@ -54,6 +55,7 @@ export function SessionPane(props: SessionPaneProps) {
   const multiPane = props.mode === "multi" ? useMultiPane() : undefined
   const notification = useNotification()
   const messageActions = useMessageActions()
+  const theme = useTheme()
   const hasMultiplePanes = createMemo(() =>
     props.mode === "multi" && multiPane ? multiPane.panes().length > 1 : false,
   )
@@ -359,7 +361,7 @@ export function SessionPane(props: SessionPaneProps) {
             position: "absolute",
             inset: 0,
             "z-index": 5,
-            "background-color": "rgba(0, 0, 0, 0.1)",
+            "background-color": theme.mode() === "light" ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.1)",
             "pointer-events": "none",
           }}
         />
