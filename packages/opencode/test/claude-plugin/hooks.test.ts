@@ -1,6 +1,20 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { ClaudePluginHooks } from "../../src/claude-plugin/hooks"
 import { ClaudePluginLoader } from "../../src/claude-plugin/loader"
+import { Instance } from "../../src/project/instance"
+import { tmpdir } from "../fixture/fixture"
+
+async function withInstance<R>(fn: () => R) {
+  await using tmp = await tmpdir({ git: true })
+  return await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const result = await fn()
+      await Instance.dispose()
+      return result
+    },
+  })
+}
 
 describe("claude-plugin.hooks", () => {
   beforeEach(() => {
@@ -139,11 +153,13 @@ describe("claude-plugin.hooks", () => {
 
   describe("trigger", () => {
     test("should return empty array when no hooks registered", async () => {
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test-session",
-        toolName: "Bash",
-        toolArgs: { command: "ls" },
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test-session",
+          toolName: "Bash",
+          toolArgs: { command: "ls" },
+        }),
+      )
 
       expect(results).toEqual([])
     })
@@ -158,11 +174,13 @@ describe("claude-plugin.hooks", () => {
         },
       ])
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test-session",
-        toolName: "Bash",
-        toolArgs: { command: "ls" },
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test-session",
+          toolName: "Bash",
+          toolArgs: { command: "ls" },
+        }),
+      )
 
       expect(results).toHaveLength(1)
       expect(results[0].success).toBe(true)
@@ -187,11 +205,13 @@ describe("claude-plugin.hooks", () => {
         },
       ])
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test-session",
-        toolName: "bash", // lowercase, should match Bash
-        toolArgs: {},
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test-session",
+          toolName: "bash", // lowercase, should match Bash
+          toolArgs: {},
+        }),
+      )
 
       expect(results).toHaveLength(1)
       expect(results[0].output).toBe("Bash hook")
@@ -208,11 +228,13 @@ describe("claude-plugin.hooks", () => {
         },
       ])
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test-session",
-        toolName: "webfetch", // should become WebFetch and match Web*
-        toolArgs: {},
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test-session",
+          toolName: "webfetch", // should become WebFetch and match Web*
+          toolArgs: {},
+        }),
+      )
 
       expect(results).toHaveLength(1)
       expect(results[0].output).toBe("Web hook triggered")
@@ -229,11 +251,13 @@ describe("claude-plugin.hooks", () => {
         },
       ])
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test-session",
-        toolName: "Bash",
-        toolArgs: {},
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test-session",
+          toolName: "Bash",
+          toolArgs: {},
+        }),
+      )
 
       expect(results).toHaveLength(1)
       expect(results[0].output).toBe("Plugin root: /my/plugin/path")
@@ -267,7 +291,7 @@ describe("claude-plugin.hooks", () => {
         stopHookActive: false,
       }
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", context)
+      const results = await withInstance(() => ClaudePluginHooks.trigger("PreToolUse", context))
       expect(results).toHaveLength(1)
     })
   })
@@ -283,10 +307,12 @@ describe("claude-plugin.hooks", () => {
         },
       ])
 
-      const results = await ClaudePluginHooks.trigger("PreToolUse", {
-        sessionID: "test",
-        toolName: "Bash",
-      })
+      const results = await withInstance(() =>
+        ClaudePluginHooks.trigger("PreToolUse", {
+          sessionID: "test",
+          toolName: "Bash",
+        }),
+      )
 
       const result = results[0]
       expect(result).toHaveProperty("success")

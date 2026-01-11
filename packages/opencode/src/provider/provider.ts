@@ -886,6 +886,7 @@ export namespace Provider {
 
         // Filter out disabled variants from config
         const configVariants = configProvider?.models?.[modelID]?.variants
+        const hasConfigVariants = configVariants !== undefined
         if (configVariants && model.variants) {
           const merged = mergeDeep(model.variants, configVariants)
           model.variants = mapValues(
@@ -895,8 +896,10 @@ export namespace Provider {
         }
 
         if (!model.variants || Object.keys(model.variants).length === 0) {
-          const fallback = ProviderTransform.variants(model)
-          if (Object.keys(fallback).length > 0) model.variants = fallback
+          if (!hasConfigVariants) {
+            const fallback = ProviderTransform.variants(model)
+            if (Object.keys(fallback).length > 0) model.variants = fallback
+          }
         }
       }
 

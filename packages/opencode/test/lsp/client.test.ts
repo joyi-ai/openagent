@@ -1,18 +1,46 @@
 import { describe, expect, test, beforeEach } from "bun:test"
-import path from "path"
+import { PassThrough } from "stream"
+import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node"
 import { LSPClient } from "../../src/lsp/client"
 import { LSPServer } from "../../src/lsp/server"
 import { Instance } from "../../src/project/instance"
 import { Log } from "../../src/util/log"
 
-// Minimal fake LSP server that speaks JSON-RPC over stdio
+// Minimal fake LSP server that speaks JSON-RPC over in-memory streams
 function spawnFakeServer() {
-  const { spawn } = require("child_process")
-  const serverPath = path.join(__dirname, "../fixture/lsp/fake-lsp-server.js")
+  const clientToServer = new PassThrough()
+  const serverToClient = new PassThrough()
+
+  const connection = createMessageConnection(
+    new StreamMessageReader(clientToServer),
+    new StreamMessageWriter(serverToClient),
+  )
+
+  connection.onRequest("initialize", async () => ({ capabilities: {} }))
+  connection.onNotification("initialized", () => {})
+  connection.onNotification("workspace/didChangeConfiguration", () => {})
+  connection.onNotification("test/trigger", (params) => {
+    if (!params || typeof params !== "object") return
+    if (!("method" in params)) return
+    const method = (params as { method?: unknown }).method
+    if (typeof method !== "string") return
+    void connection.sendRequest(method, {})
+  })
+
+  connection.listen()
+
   return {
-    process: spawn(process.execPath, [serverPath], {
-      stdio: "pipe",
-    }),
+    process: {
+      stdin: clientToServer,
+      stdout: serverToClient,
+      pid: process.pid,
+      kill: () => {
+        connection.dispose()
+        clientToServer.destroy()
+        serverToClient.destroy()
+        return true
+      },
+    },
   }
 }
 

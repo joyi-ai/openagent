@@ -12,6 +12,7 @@ const state = path.join(xdgState!, app)
 
 // Tauri app config directory (where oh-my-opencode installer writes for desktop)
 function getTauriConfigDir(): string | undefined {
+  if (process.env.OPENCODE_TEST_HOME) return undefined
   const identifier = "ai.opencode.desktop"
   const identifierDev = "ai.opencode.desktop.dev"
 
