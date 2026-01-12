@@ -49,8 +49,54 @@ impl ServerState {
 #[derive(Clone)]
 struct LogState(Arc<Mutex<VecDeque<String>>>);
 
+#[derive(Default)]
+struct AllowedServerCache {
+    list: Vec<String>,
+    origins: Vec<String>,
+}
+
+#[derive(Default)]
+struct AllowedServerState(Mutex<AllowedServerCache>);
+
 const MAX_LOG_ENTRIES: usize = 200;
 const GLOBAL_STORAGE: &str = "opencode.global.dat";
+
+fn url_origin(url: &tauri::Url) -> String {
+    format!(
+        "{}://{}{}",
+        url.scheme(),
+        url.host_str().unwrap_or(""),
+        url.port().map(|p| format!(":{}", p)).unwrap_or_default()
+    )
+}
+
+fn parse_server_origins(list: &[String]) -> Vec<String> {
+    let mut origins = Vec::new();
+    for server in list {
+        let parsed = tauri::Url::parse(server);
+        if let Ok(parsed) = parsed {
+            origins.push(url_origin(&parsed));
+        }
+    }
+    origins
+}
+
+fn allowed_server_origins(app: &AppHandle, servers: &[String]) -> Vec<String> {
+    let state = app.try_state::<AllowedServerState>();
+    if let Some(state) = state {
+        let cache = state.0.lock();
+        if let Ok(mut cache) = cache {
+            if cache.list == servers {
+                return cache.origins.clone();
+            }
+            let origins = parse_server_origins(servers);
+            cache.list = servers.to_vec();
+            cache.origins = origins.clone();
+            return origins;
+        }
+    }
+    parse_server_origins(servers)
+}
 
 /// Check if a URL's origin matches any configured server in the store.
 /// Returns true if the URL should be allowed for internal navigation.
@@ -76,33 +122,23 @@ fn is_allowed_server(app: &AppHandle, url: &tauri::Url) -> bool {
         return false;
     };
 
-    // Get the origin of the navigation URL (scheme + host + port)
-    let url_origin = format!(
-        "{}://{}{}",
-        url.scheme(),
-        url.host_str().unwrap_or(""),
-        url.port().map(|p| format!(":{}", p)).unwrap_or_default()
-    );
-
-    // Check if any configured server matches the URL's origin
+    let mut servers = Vec::new();
     for server in list {
         let Some(server_url) = server.as_str() else {
             continue;
         };
+        servers.push(server_url.to_string());
+    }
+    if servers.is_empty() {
+        return false;
+    }
 
-        // Parse the server URL to extract its origin
-        let Ok(parsed) = tauri::Url::parse(server_url) else {
-            continue;
-        };
+    // Get the origin of the navigation URL (scheme + host + port)
+    let url_origin = url_origin(url);
 
-        let server_origin = format!(
-            "{}://{}{}",
-            parsed.scheme(),
-            parsed.host_str().unwrap_or(""),
-            parsed.port().map(|p| format!(":{}", p)).unwrap_or_default()
-        );
-
-        if url_origin == server_origin {
+    let origins = allowed_server_origins(app, &servers);
+    for origin in origins {
+        if url_origin == origin {
             return true;
         }
     }
@@ -204,9 +240,16 @@ async fn stt_stop_and_transcribe(app: AppHandle) -> Result<String, String> {
         .try_state::<stt::SharedSttState>()
         .ok_or("STT state not found")?;
 
-    let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
-    let audio = state.stop_recording();
-    state.transcribe(&audio)
+    let (audio, inference) = {
+        let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let audio = state.stop_recording();
+        let inference = state.inference()?;
+        (audio, inference)
+    };
+
+    tauri::async_runtime::spawn_blocking(move || inference.transcribe(&audio))
+        .await
+        .map_err(|e| format!("Transcription task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -363,6 +406,7 @@ pub fn run() {
 
             // Initialize log state
             app.manage(LogState(Arc::new(Mutex::new(VecDeque::new()))));
+            app.manage(AllowedServerState::default());
 
             // Initialize STT state
             app.manage(stt::init_stt_state(&app));
@@ -429,6 +473,8 @@ pub fn run() {
                         let child = spawn_sidecar(&app, port);
 
                         let timestamp = Instant::now();
+                        let mut delay = Duration::from_millis(10);
+                        let max_delay = Duration::from_millis(200);
                         let res = loop {
                             if timestamp.elapsed() > Duration::from_secs(7) {
                                 break Err(format!(
@@ -437,14 +483,20 @@ pub fn run() {
                                 ));
                             }
 
-                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            tokio::time::sleep(delay).await;
 
                             if is_server_running(port).await {
                                 // give the server a little bit more time to warm up
-                                tokio::time::sleep(Duration::from_millis(10)).await;
+                                tokio::time::sleep(Duration::from_millis(20)).await;
 
                                 break Ok(());
                             }
+                            let next = delay.saturating_mul(2);
+                            if next > max_delay {
+                                delay = max_delay;
+                                continue;
+                            }
+                            delay = next;
                         };
 
                         println!("Server ready after {:?}", timestamp.elapsed());

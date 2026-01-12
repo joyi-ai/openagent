@@ -51,13 +51,13 @@ pub struct SttState {
     /// Whether currently recording
     is_recording: bool,
     /// ONNX session for the preprocessor (nemo128)
-    preprocessor_session: Option<Session>,
+    preprocessor_session: Option<Arc<Mutex<Session>>>,
     /// ONNX session for the encoder
-    encoder_session: Option<Session>,
+    encoder_session: Option<Arc<Mutex<Session>>>,
     /// ONNX session for the decoder
-    decoder_session: Option<Session>,
+    decoder_session: Option<Arc<Mutex<Session>>>,
     /// Vocabulary: token ID -> string
-    vocab: HashMap<i64, String>,
+    vocab: Arc<HashMap<i64, String>>,
     /// Vocabulary size
     vocab_size: usize,
     /// Blank token index
@@ -76,7 +76,7 @@ impl SttState {
             preprocessor_session: None,
             encoder_session: None,
             decoder_session: None,
-            vocab: HashMap::new(),
+            vocab: Arc::new(HashMap::new()),
             vocab_size: 0,
             blank_idx: 0,
             model_status: ModelStatus::NotDownloaded,
@@ -126,12 +126,13 @@ impl SttState {
         std::mem::take(&mut self.audio_buffer)
     }
 
-    fn load_vocab(&mut self) -> Result<(), String> {
-        let vocab_path = self.model_dir.join("vocab.txt");
+    fn load_vocab(model_dir: &PathBuf) -> Result<(Arc<HashMap<i64, String>>, usize, i64), String> {
+        let vocab_path = model_dir.join("vocab.txt");
         let content = std::fs::read_to_string(&vocab_path)
             .map_err(|e| format!("Failed to read vocab: {}", e))?;
 
-        self.vocab.clear();
+        let mut vocab = HashMap::new();
+        let mut blank_idx = 0;
         for line in content.lines() {
             let parts: Vec<&str> = line.trim().split(' ').collect();
             if parts.len() >= 2 {
@@ -140,26 +141,25 @@ impl SttState {
                     .parse()
                     .map_err(|_| format!("Invalid vocab ID: {}", parts[1]))?;
                 if parts[0] == "<blk>" {
-                    self.blank_idx = id;
+                    blank_idx = id;
                 }
-                self.vocab.insert(id, token);
+                vocab.insert(id, token);
             }
         }
-        self.vocab_size = self.vocab.len();
-        Ok(())
+        let vocab_size = vocab.len();
+        Ok((Arc::new(vocab), vocab_size, blank_idx))
     }
 
-    pub fn load_models(&mut self) -> Result<(), String> {
-        if !Self::are_models_downloaded(&self.model_dir) {
+    fn build_models(model_dir: &PathBuf) -> Result<LoadedModels, String> {
+        if !Self::are_models_downloaded(model_dir) {
             return Err("Models not downloaded".to_string());
         }
 
-        // Load vocabulary first
-        self.load_vocab()?;
+        let (vocab, vocab_size, blank_idx) = Self::load_vocab(model_dir)?;
 
-        let preprocessor_path = self.model_dir.join("nemo128.onnx");
-        let encoder_path = self.model_dir.join("encoder-model.onnx");
-        let decoder_path = self.model_dir.join("decoder_joint-model.onnx");
+        let preprocessor_path = model_dir.join("nemo128.onnx");
+        let encoder_path = model_dir.join("encoder-model.onnx");
+        let decoder_path = model_dir.join("decoder_joint-model.onnx");
 
         // Initialize ONNX Runtime
         ort::init()
@@ -197,22 +197,80 @@ impl SttState {
             .commit_from_file(&decoder_path)
             .map_err(|e| format!("Failed to load decoder model: {}", e))?;
 
-        self.preprocessor_session = Some(preprocessor_session);
-        self.encoder_session = Some(encoder_session);
-        self.decoder_session = Some(decoder_session);
-        self.model_status = ModelStatus::Ready;
+        Ok(LoadedModels {
+            preprocessor: Arc::new(Mutex::new(preprocessor_session)),
+            encoder: Arc::new(Mutex::new(encoder_session)),
+            decoder: Arc::new(Mutex::new(decoder_session)),
+            vocab,
+            vocab_size,
+            blank_idx,
+        })
+    }
 
+    fn apply_models(&mut self, models: LoadedModels) {
+        self.preprocessor_session = Some(models.preprocessor);
+        self.encoder_session = Some(models.encoder);
+        self.decoder_session = Some(models.decoder);
+        self.vocab = models.vocab;
+        self.vocab_size = models.vocab_size;
+        self.blank_idx = models.blank_idx;
+        self.model_status = ModelStatus::Ready;
+    }
+
+    pub fn load_models(&mut self) -> Result<(), String> {
+        let models = Self::build_models(&self.model_dir)?;
+        self.apply_models(models);
         Ok(())
     }
 
-    pub fn transcribe(&mut self, audio: &[f32]) -> Result<String, String> {
+    pub fn inference(&self) -> Result<SttInference, String> {
         let preprocessor = self
             .preprocessor_session
-            .as_mut()
-            .ok_or("Preprocessor not loaded")?;
-        let encoder = self.encoder_session.as_mut().ok_or("Encoder not loaded")?;
-        let decoder = self.decoder_session.as_mut().ok_or("Decoder not loaded")?;
+            .as_ref()
+            .ok_or("Preprocessor not loaded")?
+            .clone();
+        let encoder = self
+            .encoder_session
+            .as_ref()
+            .ok_or("Encoder not loaded")?
+            .clone();
+        let decoder = self
+            .decoder_session
+            .as_ref()
+            .ok_or("Decoder not loaded")?
+            .clone();
 
+        Ok(SttInference {
+            preprocessor,
+            encoder,
+            decoder,
+            vocab: self.vocab.clone(),
+            vocab_size: self.vocab_size,
+            blank_idx: self.blank_idx,
+        })
+    }
+}
+
+struct LoadedModels {
+    preprocessor: Arc<Mutex<Session>>,
+    encoder: Arc<Mutex<Session>>,
+    decoder: Arc<Mutex<Session>>,
+    vocab: Arc<HashMap<i64, String>>,
+    vocab_size: usize,
+    blank_idx: i64,
+}
+
+pub struct SttInference {
+    preprocessor: Arc<Mutex<Session>>,
+    encoder: Arc<Mutex<Session>>,
+    decoder: Arc<Mutex<Session>>,
+    vocab: Arc<HashMap<i64, String>>,
+    vocab_size: usize,
+    blank_idx: i64,
+}
+
+impl SttInference {
+    pub fn transcribe(&self, audio: &[f32]) -> Result<String, String> {
         if audio.is_empty() {
             return Ok(String::new());
         }
@@ -221,23 +279,27 @@ impl SttState {
         // Input: waveforms [batch, samples], waveforms_lens [batch]
         // Output: features [batch, frames, 128], features_lens [batch]
         let audio_len = audio.len() as i64;
-        let waveforms: ndarray::Array2<f32> =
-            ndarray::Array2::from_shape_vec((1, audio.len()), audio.to_vec())
-                .map_err(|e| format!("Failed to create waveforms array: {}", e))?;
-        let waveforms_lens: ndarray::Array1<i64> = ndarray::Array1::from_vec(vec![audio_len]);
+        let waveforms = ndarray::ArrayView2::from_shape((1, audio.len()), audio)
+            .map_err(|e| format!("Failed to create waveforms array: {}", e))?;
+        let waveforms_lens = ndarray::arr1(&[audio_len]);
 
         // Create input tensors
-        let waveforms_tensor = ort::value::Tensor::from_array(waveforms)
+        let waveforms_tensor = ort::value::Tensor::from_array_view(waveforms)
             .map_err(|e| format!("Failed to create waveforms tensor: {}", e))?;
-        let waveforms_lens_tensor = ort::value::Tensor::from_array(waveforms_lens)
+        let waveforms_lens_tensor = ort::value::Tensor::from_array_view(waveforms_lens.view())
             .map_err(|e| format!("Failed to create waveforms_lens tensor: {}", e))?;
 
+        let mut preprocessor = self
+            .preprocessor
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let preprocessor_outputs = preprocessor
             .run(ort::inputs![
                 "waveforms" => waveforms_tensor,
                 "waveforms_lens" => waveforms_lens_tensor
             ])
             .map_err(|e| format!("Failed to run preprocessor: {}", e))?;
+        drop(preprocessor);
 
         // Extract outputs
         let features_data = preprocessor_outputs[0]
@@ -249,24 +311,24 @@ impl SttState {
 
         // Reconstruct arrays from shape and data
         let features_shape: Vec<usize> = features_data.0.iter().map(|&x| x as usize).collect();
-        let features: ndarray::ArrayD<f32> =
-            ndarray::ArrayD::from_shape_vec(features_shape.clone(), features_data.1.to_vec())
-                .map_err(|e| format!("Failed to create features array: {}", e))?;
-        let features_lens: ndarray::Array1<i64> =
-            ndarray::Array1::from_vec(features_lens_data.1.to_vec());
+        let features = ndarray::ArrayViewD::from_shape(features_shape.clone(), features_data.1)
+            .map_err(|e| format!("Failed to create features array: {}", e))?;
+        let features_lens = ndarray::ArrayView1::from(features_lens_data.1);
 
         // Step 2: Encode features
-        let features_tensor = ort::value::Tensor::from_array(features.clone())
+        let features_tensor = ort::value::Tensor::from_array_view(features)
             .map_err(|e| format!("Failed to create features tensor: {}", e))?;
-        let features_lens_tensor = ort::value::Tensor::from_array(features_lens.clone())
+        let features_lens_tensor = ort::value::Tensor::from_array_view(features_lens)
             .map_err(|e| format!("Failed to create features_lens tensor: {}", e))?;
 
+        let mut encoder = self.encoder.lock().map_err(|e| format!("Lock error: {}", e))?;
         let encoder_outputs = encoder
             .run(ort::inputs![
                 "audio_signal" => features_tensor,
                 "length" => features_lens_tensor
             ])
             .map_err(|e| format!("Failed to run encoder: {}", e))?;
+        drop(encoder);
 
         let encoder_out_data = encoder_outputs[0]
             .try_extract_tensor::<f32>()
@@ -276,11 +338,9 @@ impl SttState {
             .map_err(|e| format!("Failed to extract encoded_lengths: {}", e))?;
 
         let encoder_shape: Vec<usize> = encoder_out_data.0.iter().map(|&x| x as usize).collect();
-        let encoder_out: ndarray::ArrayD<f32> =
-            ndarray::ArrayD::from_shape_vec(encoder_shape.clone(), encoder_out_data.1.to_vec())
-                .map_err(|e| format!("Failed to create encoder array: {}", e))?;
-        let encoder_lens: ndarray::Array1<i64> =
-            ndarray::Array1::from_vec(encoder_lens_data.1.to_vec());
+        let encoder_out = ndarray::ArrayViewD::from_shape(encoder_shape.clone(), encoder_out_data.1)
+            .map_err(|e| format!("Failed to create encoder array: {}", e))?;
+        let encoder_lens = ndarray::ArrayView1::from(encoder_lens_data.1);
 
         // Get encoder output shape - [batch, dim, frames]
         let encoded_dim = encoder_shape[1];
@@ -302,11 +362,20 @@ impl SttState {
         let mut emitted_tokens = 0;
         let encoded_len = encoder_lens[0] as usize;
 
+        let mut encoder_frame = ndarray::Array3::<f32>::zeros((1, encoded_dim, 1));
+        let mut targets = ndarray::Array2::<i32>::zeros((1, 1));
+        let target_length = ndarray::arr1(&[1i32]);
+        let mut decoder = self.decoder.lock().map_err(|e| format!("Lock error: {}", e))?;
+
         while t < encoded_len && t < num_frames {
             // Get encoder output at frame t: shape [1, dim, 1]
-            let mut encoder_frame = ndarray::Array3::<f32>::zeros((1, encoded_dim, 1));
-            for d in 0..encoded_dim {
-                encoder_frame[[0, d, 0]] = encoder_out[[0, d, t]];
+            {
+                let encoder_frame_slice = encoder_frame
+                    .as_slice_mut()
+                    .ok_or("Failed to access encoder frame slice")?;
+                for d in 0..encoded_dim {
+                    encoder_frame_slice[d] = encoder_out[[0, d, t]];
+                }
             }
 
             let prev_token = if tokens.is_empty() {
@@ -314,21 +383,18 @@ impl SttState {
             } else {
                 tokens[tokens.len() - 1] as i32
             };
-            let targets: ndarray::Array2<i32> =
-                ndarray::Array2::from_shape_vec((1, 1), vec![prev_token])
-                    .map_err(|e| format!("Failed to create targets: {}", e))?;
-            let target_length: ndarray::Array1<i32> = ndarray::Array1::from_vec(vec![1i32]);
+            targets[[0, 0]] = prev_token;
 
             // Create tensors for decoder
-            let encoder_frame_tensor = ort::value::Tensor::from_array(encoder_frame)
+            let encoder_frame_tensor = ort::value::Tensor::from_array_view(encoder_frame.view())
                 .map_err(|e| format!("Failed to create encoder_frame tensor: {}", e))?;
-            let targets_tensor = ort::value::Tensor::from_array(targets)
+            let targets_tensor = ort::value::Tensor::from_array_view(targets.view())
                 .map_err(|e| format!("Failed to create targets tensor: {}", e))?;
-            let target_length_tensor = ort::value::Tensor::from_array(target_length)
+            let target_length_tensor = ort::value::Tensor::from_array_view(target_length.view())
                 .map_err(|e| format!("Failed to create target_length tensor: {}", e))?;
-            let state1_tensor = ort::value::Tensor::from_array(state1.clone())
+            let state1_tensor = ort::value::Tensor::from_array_view(state1.view())
                 .map_err(|e| format!("Failed to create state1 tensor: {}", e))?;
-            let state2_tensor = ort::value::Tensor::from_array(state2.clone())
+            let state2_tensor = ort::value::Tensor::from_array_view(state2.view())
                 .map_err(|e| format!("Failed to create state2 tensor: {}", e))?;
 
             let decoder_outputs = decoder
@@ -384,21 +450,21 @@ impl SttState {
 
             if token != self.blank_idx {
                 // Update state only when emitting a token
-                let state1_shape: Vec<usize> =
-                    new_state1_data.0.iter().map(|&x| x as usize).collect();
-                state1 = ndarray::Array3::from_shape_vec(
-                    (state1_shape[0], state1_shape[1], state1_shape[2]),
-                    new_state1_data.1.to_vec(),
-                )
-                .map_err(|e| format!("Failed to reshape state1: {}", e))?;
+                let state1_slice = state1
+                    .as_slice_mut()
+                    .ok_or("Failed to access state1 slice")?;
+                if state1_slice.len() != new_state1_data.1.len() {
+                    return Err("State1 size mismatch".to_string());
+                }
+                state1_slice.copy_from_slice(new_state1_data.1);
 
-                let state2_shape: Vec<usize> =
-                    new_state2_data.0.iter().map(|&x| x as usize).collect();
-                state2 = ndarray::Array3::from_shape_vec(
-                    (state2_shape[0], state2_shape[1], state2_shape[2]),
-                    new_state2_data.1.to_vec(),
-                )
-                .map_err(|e| format!("Failed to reshape state2: {}", e))?;
+                let state2_slice = state2
+                    .as_slice_mut()
+                    .ok_or("Failed to access state2 slice")?;
+                if state2_slice.len() != new_state2_data.1.len() {
+                    return Err("State2 size mismatch".to_string());
+                }
+                state2_slice.copy_from_slice(new_state2_data.1);
 
                 tokens.push(token);
                 emitted_tokens += 1;
@@ -408,7 +474,9 @@ impl SttState {
             if step > 0 {
                 t += step;
                 emitted_tokens = 0;
-            } else if token == self.blank_idx || emitted_tokens >= max_tokens_per_step {
+                continue;
+            }
+            if token == self.blank_idx || emitted_tokens >= max_tokens_per_step {
                 t += 1;
                 emitted_tokens = 0;
             }
@@ -535,12 +603,18 @@ pub async fn download_models(app: AppHandle) -> Result<(), String> {
     app.emit("stt:download-progress", 1.0)
         .map_err(|e| format!("Failed to emit progress: {}", e))?;
 
-    // Update state to ready and load models
+    // Load models off-lock
+    let model_dir_for_load = model_dir.clone();
+    let models = tokio::task::spawn_blocking(move || SttState::build_models(&model_dir_for_load))
+        .await
+        .map_err(|e| format!("Failed to load models: {}", e))??;
+
+    // Update state to ready
     {
         let state = app.state::<SharedSttState>();
         let mut state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
         state.model_dir = model_dir;
-        state.load_models()?;
+        state.apply_models(models);
     }
 
     Ok(())
