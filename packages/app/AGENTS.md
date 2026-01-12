@@ -1,13 +1,19 @@
-## Debugging
+# AGENTS.md
 
-- To test the opencode app, use the playwright MCP server, the app is already
-  running at http://localhost:3000
-- NEVER try to restart the app, or the server process, EVER.
+Scope: shared SolidJS app components.
 
-## SolidJS
+## Task-Specific Docs
+- ../../agent-docs/frontend.md
+- ../../agent-docs/workflows.md
+- ../../agent-docs/code-style.md
+- ../../agent-docs/testing.md
 
-- Always prefer `createStore` over multiple `createSignal` calls
+## Verification Loops
+- UI smoke checks via Playwright MCP server (app already running at
+  http://localhost:3000).
+- `bun turbo typecheck`
 
-## Tool Calling
-
-- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
+## Gotchas (keep updated)
+- Use the Playwright MCP server for UI debugging; the app is already running at
+  http://localhost:3000.
+- Never restart the app or server process while using that MCP server.
