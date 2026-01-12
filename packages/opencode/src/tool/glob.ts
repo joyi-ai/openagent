@@ -4,6 +4,7 @@ import { Tool } from "./tool"
 import DESCRIPTION from "./glob.txt"
 import { Ripgrep } from "../file/ripgrep"
 import { Instance } from "../project/instance"
+import { File } from "../file"
 
 export const GlobTool = Tool.define("glob", {
   description: DESCRIPTION,
@@ -33,15 +34,32 @@ export const GlobTool = Tool.define("glob", {
     const limit = 100
     const files: string[] = []
     const state = { truncated: false }
-    for await (const file of Ripgrep.files({
-      cwd: search,
-      glob: [params.pattern],
-    })) {
-      if (files.length >= limit) {
-        state.truncated = true
-        break
+    const matcher = globToRegExp(params.pattern)
+    const indexed = await File.indexPaths({
+      root: search,
+    })
+    if (indexed) {
+      for (const file of indexed.files) {
+        const normalized = file.replaceAll("\\", "/")
+        if (!matcher.test(normalized)) continue
+        files.push(path.resolve(search, file))
+        if (files.length >= limit) {
+          state.truncated = true
+          break
+        }
       }
-      files.push(path.resolve(search, file))
+    }
+    if (!indexed) {
+      for await (const file of Ripgrep.files({
+        cwd: search,
+        glob: [params.pattern],
+      })) {
+        if (files.length >= limit) {
+          state.truncated = true
+          break
+        }
+        files.push(path.resolve(search, file))
+      }
     }
 
     const output = []
@@ -64,3 +82,37 @@ export const GlobTool = Tool.define("glob", {
     }
   },
 })
+
+function globToRegExp(pattern: string) {
+  const normalized = pattern.replaceAll("\\", "/")
+  const parts: string[] = []
+  const state = { star: false }
+  for (const char of normalized) {
+    if (char === "*") {
+      if (state.star) {
+        parts.push(".*")
+        state.star = false
+        continue
+      }
+      state.star = true
+      continue
+    }
+    if (state.star) {
+      parts.push("[^/]*")
+      state.star = false
+    }
+    if (char === "?") {
+      parts.push("[^/]")
+      continue
+    }
+    parts.push(escapeRegExp(char))
+  }
+  if (state.star) {
+    parts.push("[^/]*")
+  }
+  return new RegExp("^" + parts.join("") + "$")
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
+}

@@ -910,6 +910,14 @@ export namespace MessageV2 {
       return entry.parts
     }
 
+    export function peekParts(sessionID: string, messageID: string): Part[] | undefined {
+      const key = getCacheKey(sessionID, messageID)
+      const entry = partsCache.get(key)
+      if (!entry) return
+      normalizeEntry(entry)
+      return entry.parts
+    }
+
     export async function updatePart(part: Part): Promise<void> {
       const key = getCacheKey(part.sessionID, part.messageID)
 

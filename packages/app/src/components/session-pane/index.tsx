@@ -130,6 +130,22 @@ export function SessionPane(props: SessionPaneProps) {
     () => status().type !== "idle" && sessionMessages.activeMessage()?.id === sessionMessages.lastUserMessage()?.id,
   )
 
+  createEffect(() => {
+    const session = sessionId()
+    const active = sessionMessages.activeMessage()
+    if (!session) return
+    if (!active) return
+    const messages = sync.data.message[session] ?? []
+    for (const msg of messages) {
+      if (msg.id === active.id) {
+        void sync.session.ensureParts(session, msg.id)
+      }
+      if ("parentID" in msg && msg.parentID === active.id) {
+        void sync.session.ensureParts(session, msg.id)
+      }
+    }
+  })
+
   createEffect(
     on(
       () => working(),

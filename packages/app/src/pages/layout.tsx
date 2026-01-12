@@ -387,20 +387,6 @@ export default function Layout(props: ParentProps) {
 
         batch(() => {
           setStore("message", sessionID, reconcile(next, { key: "id" }))
-
-          for (const message of items) {
-            setStore(
-              "part",
-              message.info.id,
-              reconcile(
-                message.parts
-                  .filter((p) => !!p?.id)
-                  .slice()
-                  .sort((a, b) => a.id.localeCompare(b.id)),
-                { key: "id" },
-              ),
-            )
-          }
         })
       })
       .catch(() => undefined)

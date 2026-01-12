@@ -3,7 +3,7 @@ import { Bus } from "@/bus"
 import { Log } from "../util/log"
 import { LSPClient } from "./client"
 import path from "path"
-import { pathToFileURL } from "url"
+import { pathToFileURL, fileURLToPath } from "url"
 import { LSPServer } from "./server"
 import z from "zod"
 import { Config } from "../config/config"
@@ -140,6 +140,21 @@ export namespace LSP {
     },
     async (state) => {
       await Promise.all(state.clients.map((client) => client.shutdown()))
+    },
+  )
+
+  const SYMBOL_CACHE_LIMIT = 200
+
+  const symbolState = Instance.state(
+    () => {
+      return {
+        cache: new Map<string, { version: string; value: (LSP.DocumentSymbol | LSP.Symbol)[] }>(),
+        pending: new Map<string, Promise<(LSP.DocumentSymbol | LSP.Symbol)[]>>(),
+      }
+    },
+    async (state) => {
+      state.cache.clear()
+      state.pending.clear()
     },
   )
 
@@ -369,8 +384,18 @@ export namespace LSP {
   }
 
   export async function documentSymbol(uri: string) {
-    const file = new URL(uri).pathname
-    return run(file, (client) =>
+    const file = fileURLToPath(uri)
+    const stats = await Bun.file(file).stat().catch(() => undefined)
+    const version = stats ? `${stats.mtime.getTime()}:${stats.size}` : undefined
+    const symbols = symbolState()
+    const cached = version ? symbols.cache.get(file) : undefined
+    if (cached && cached.version === version) return cached.value
+
+    const key = version ? `${file}:${version}` : file
+    const inflight = symbols.pending.get(key)
+    if (inflight) return inflight
+
+    const request = run(file, (client) =>
       client.connection
         .sendRequest("textDocument/documentSymbol", {
           textDocument: {
@@ -381,6 +406,16 @@ export namespace LSP {
     )
       .then((result) => result.flat() as (LSP.DocumentSymbol | LSP.Symbol)[])
       .then((result) => result.filter(Boolean))
+      .then((result) => {
+        symbols.pending.delete(key)
+        if (!version) return result
+        symbols.cache.set(file, { version, value: result })
+        if (symbols.cache.size <= SYMBOL_CACHE_LIMIT) return result
+        symbols.cache.clear()
+        return result
+      })
+    symbols.pending.set(key, request)
+    return request
   }
 
   export async function definition(input: { file: string; line: number; character: number }) {

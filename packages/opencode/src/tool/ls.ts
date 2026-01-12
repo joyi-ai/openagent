@@ -4,6 +4,7 @@ import * as path from "path"
 import DESCRIPTION from "./ls.txt"
 import { Instance } from "../project/instance"
 import { Ripgrep } from "../file/ripgrep"
+import { File } from "../file"
 
 export const IGNORE_PATTERNS = [
   "node_modules/",
@@ -53,10 +54,25 @@ export const ListTool = Tool.define("list", {
     })
 
     const ignoreGlobs = IGNORE_PATTERNS.map((p) => `!${p}*`).concat(params.ignore?.map((p) => `!${p}`) || [])
-    const files = []
-    for await (const file of Ripgrep.files({ cwd: searchPath, glob: ignoreGlobs })) {
-      files.push(file)
-      if (files.length >= LIMIT) break
+    const files: string[] = []
+    const state = { truncated: false }
+    const indexed = await File.indexPaths({
+      root: searchPath,
+      ignore: ignoreGlobs,
+      limit: LIMIT,
+    })
+    if (indexed) {
+      files.push(...indexed.files)
+      state.truncated = indexed.truncated
+    }
+    if (!indexed) {
+      for await (const file of Ripgrep.files({ cwd: searchPath, glob: ignoreGlobs })) {
+        files.push(file)
+        if (files.length >= LIMIT) {
+          state.truncated = true
+          break
+        }
+      }
     }
 
     // Build directory structure
@@ -111,7 +127,7 @@ export const ListTool = Tool.define("list", {
       title: path.relative(Instance.worktree, searchPath),
       metadata: {
         count: files.length,
-        truncated: files.length >= LIMIT,
+        truncated: state.truncated,
       },
       output,
     }

@@ -331,124 +331,165 @@ export namespace File {
     },
   )
 
+  const STATUS_TTL = 2000
+
+  const statusState = Instance.state(
+    async () => {
+      const cache = {
+        value: [] as Info[],
+        time: 0,
+        dirty: true,
+        pending: undefined as Promise<Info[]> | undefined,
+      }
+      const subs: Array<() => void> = []
+      const markDirty = () => {
+        cache.dirty = true
+      }
+      subs.push(Bus.subscribe(FileWatcher.Event.Updated, markDirty))
+      subs.push(Bus.subscribe(Event.Edited, markDirty))
+      return {
+        cache,
+        subs,
+      }
+    },
+    async (entry) => {
+      const state = await entry
+      for (const unsub of state.subs) {
+        unsub()
+      }
+    },
+  )
+
   export function init() {
     state()
   }
 
   export async function status() {
-    const project = Instance.project
-    if (project.vcs !== "git") return []
+    const entry = await statusState()
+    const cache = entry.cache
+    const now = Date.now()
+    const stale = cache.dirty || now - cache.time > STATUS_TTL
+    if (!stale) return cache.value
+    if (cache.pending) return cache.pending
 
-    const diffOutput = await $`git diff --numstat --no-renames HEAD`.cwd(Instance.directory).quiet().nothrow().text()
-    const diffLines = diffOutput.trim().split("\n").filter(Boolean)
-    const stats = new Map<string, { added: number; removed: number }>()
+    const run = (async () => {
+      const project = Instance.project
+      if (project.vcs !== "git") return [] as Info[]
 
-    const parseNum = (value: string | undefined) => {
-      if (!value || value === "-") return 0
-      const parsed = Number.parseInt(value, 10)
-      if (!Number.isFinite(parsed)) return 0
-      return parsed
-    }
+      const diffOutput = await $`git diff --numstat --no-renames HEAD`.cwd(Instance.directory).quiet().nothrow().text()
+      const diffLines = diffOutput.trim().split("\n").filter(Boolean)
+      const stats = new Map<string, { added: number; removed: number }>()
 
-    for (const line of diffLines) {
-      const parts = line.split("\t")
-      const filepath = parts[2]
-      if (!filepath) continue
-      stats.set(filepath, {
-        added: parseNum(parts[0]),
-        removed: parseNum(parts[1]),
+      const parseNum = (value: string | undefined) => {
+        if (!value || value === "-") return 0
+        const parsed = Number.parseInt(value, 10)
+        if (!Number.isFinite(parsed)) return 0
+        return parsed
+      }
+
+      for (const line of diffLines) {
+        const parts = line.split("\t")
+        const filepath = parts[2]
+        if (!filepath) continue
+        stats.set(filepath, {
+          added: parseNum(parts[0]),
+          removed: parseNum(parts[1]),
+        })
+      }
+
+      const statusOutput = await $`git status --porcelain=v2 -z`.cwd(Instance.directory).quiet().nothrow().text()
+      const entries = statusOutput.split("\0").filter(Boolean)
+      const changedFiles: Info[] = []
+
+      const parsePath = (entry: string, start: number) => {
+        const parts = entry.split(" ")
+        if (parts.length <= start) return ""
+        return parts.slice(start).join(" ")
+      }
+
+      const statusType = (value: string) => {
+        if (value.includes("D")) return "deleted" as const
+        if (value.includes("A")) return "added" as const
+        return "modified" as const
+      }
+
+      for (const entry of entries) {
+        if (entry.startsWith("? ")) {
+          const filepath = entry.slice(2)
+          changedFiles.push({
+            path: filepath,
+            added: 0,
+            removed: 0,
+            status: "added",
+          })
+          continue
+        }
+
+        if (entry.startsWith("1 ")) {
+          const parts = entry.split(" ")
+          const code = parts[1] ?? ""
+          const filepath = parsePath(entry, 8)
+          if (!filepath) continue
+          const stat = stats.get(filepath)
+          changedFiles.push({
+            path: filepath,
+            added: stat?.added ?? 0,
+            removed: stat?.removed ?? 0,
+            status: statusType(code),
+          })
+          continue
+        }
+
+        if (entry.startsWith("2 ")) {
+          const parts = entry.split(" ")
+          const code = parts[1] ?? ""
+          const filepath = parsePath(entry, 9)
+          if (!filepath) continue
+          const stat = stats.get(filepath)
+          changedFiles.push({
+            path: filepath,
+            added: stat?.added ?? 0,
+            removed: stat?.removed ?? 0,
+            status: statusType(code),
+          })
+          continue
+        }
+
+        if (entry.startsWith("u ")) {
+          const parts = entry.split(" ")
+          const code = parts[1] ?? ""
+          const filepath = parsePath(entry, 10)
+          if (!filepath) continue
+          const stat = stats.get(filepath)
+          changedFiles.push({
+            path: filepath,
+            added: stat?.added ?? 0,
+            removed: stat?.removed ?? 0,
+            status: statusType(code),
+          })
+        }
+      }
+
+      return changedFiles.map((x) => ({
+        ...x,
+        path: path.relative(Instance.directory, x.path),
+      }))
+    })()
+
+    cache.pending = run
+      .then((result) => {
+        cache.value = result
+        cache.time = Date.now()
+        cache.dirty = false
+        cache.pending = undefined
+        return result
       })
-    }
+      .catch((error) => {
+        cache.pending = undefined
+        throw error
+      })
 
-    const statusOutput = await $`git status --porcelain=v2 -z`.cwd(Instance.directory).quiet().nothrow().text()
-    const entries = statusOutput.split("\0").filter(Boolean)
-    const changedFiles: Info[] = []
-
-    const parsePath = (entry: string, start: number) => {
-      const parts = entry.split(" ")
-      if (parts.length <= start) return ""
-      return parts.slice(start).join(" ")
-    }
-
-    const statusType = (value: string) => {
-      if (value.includes("D")) return "deleted" as const
-      if (value.includes("A")) return "added" as const
-      return "modified" as const
-    }
-
-    const countLines = async (relative: string) => {
-      const full = path.join(Instance.directory, relative)
-      const file = Bun.file(full)
-      const size = file.size
-      if (!Number.isFinite(size)) return 0
-      if (size > 256 * 1024) return 0
-      const content = await file.text().catch(() => "")
-      if (!content) return 0
-      return content.split("\n").length
-    }
-
-    for (const entry of entries) {
-      if (entry.startsWith("? ")) {
-        const filepath = entry.slice(2)
-        const lines = await countLines(filepath)
-        changedFiles.push({
-          path: filepath,
-          added: lines,
-          removed: 0,
-          status: "added",
-        })
-        continue
-      }
-
-      if (entry.startsWith("1 ")) {
-        const parts = entry.split(" ")
-        const code = parts[1] ?? ""
-        const filepath = parsePath(entry, 8)
-        if (!filepath) continue
-        const stat = stats.get(filepath)
-        changedFiles.push({
-          path: filepath,
-          added: stat?.added ?? 0,
-          removed: stat?.removed ?? 0,
-          status: statusType(code),
-        })
-        continue
-      }
-
-      if (entry.startsWith("2 ")) {
-        const parts = entry.split(" ")
-        const code = parts[1] ?? ""
-        const filepath = parsePath(entry, 9)
-        if (!filepath) continue
-        const stat = stats.get(filepath)
-        changedFiles.push({
-          path: filepath,
-          added: stat?.added ?? 0,
-          removed: stat?.removed ?? 0,
-          status: statusType(code),
-        })
-        continue
-      }
-
-      if (entry.startsWith("u ")) {
-        const parts = entry.split(" ")
-        const code = parts[1] ?? ""
-        const filepath = parsePath(entry, 10)
-        if (!filepath) continue
-        const stat = stats.get(filepath)
-        changedFiles.push({
-          path: filepath,
-          added: stat?.added ?? 0,
-          removed: stat?.removed ?? 0,
-          status: statusType(code),
-        })
-      }
-    }
-
-    return changedFiles.map((x) => ({
-      ...x,
-      path: path.relative(Instance.directory, x.path),
-    }))
+    return cache.pending
   }
 
   export async function read(file: string): Promise<Content> {
@@ -586,5 +627,46 @@ export namespace File {
 
     log.info("search", { query, kind, results: output.length })
     return output
+  }
+
+  function buildIgnore(patterns: string[] | undefined) {
+    if (!patterns || patterns.length === 0) return
+    const ig = ignore()
+    for (const pattern of patterns) {
+      if (!pattern) continue
+      const cleaned = pattern.startsWith("!") ? pattern.slice(1) : pattern
+      if (!cleaned) continue
+      ig.add(cleaned)
+    }
+    return ig
+  }
+
+  export async function indexPaths(input: { root: string; ignore?: string[]; limit?: number }) {
+    const root = input.root
+    if (!Filesystem.contains(Instance.directory, root)) return
+
+    const relative = path.relative(Instance.directory, root)
+    const prefix = relative && relative !== "." ? relative + path.sep : ""
+    const result = await state().then((x) => x.files())
+    const files: string[] = []
+    const truncated = { value: false }
+    const ig = buildIgnore(input.ignore)
+
+    for (const file of result.files) {
+      if (prefix && !file.startsWith(prefix)) continue
+      const rel = prefix ? file.slice(prefix.length) : file
+      const normalized = rel.replaceAll("\\", "/")
+      if (ig && ig.ignores(normalized)) continue
+      files.push(rel)
+      if (input.limit !== undefined && files.length >= input.limit) {
+        truncated.value = true
+        break
+      }
+    }
+
+    return {
+      files,
+      truncated: truncated.value,
+    }
   }
 }

@@ -23,6 +23,11 @@ export namespace StorageSqlite {
     id: string
   } & Record<string, unknown>
 
+  export type MessageWithParts = {
+    info: MessageRecord["info"]
+    parts: PartRecord[]
+  }
+
   export type MessageListInput = {
     sessionID: string
     limit?: number
@@ -224,6 +229,99 @@ export namespace StorageSqlite {
       .query<{ id: string }, [string]>("SELECT id FROM messages WHERE sessionID = ? ORDER BY id DESC")
       .all(input.sessionID)
     return rows.map((row) => row.id)
+  }
+
+  export function listMessagesWithPartsPage(input: MessageListInput) {
+    const afterID = input.afterID
+    const limit = input.limit
+
+    const groupRows = (rows: Array<{ messageID: string; message: string; part: string | null }>) => {
+      const result: MessageWithParts[] = []
+      const current = { value: undefined as MessageWithParts | undefined }
+      for (const row of rows) {
+        const last = current.value
+        if (!last || last.info.id !== row.messageID) {
+          const parsed = JSON.parse(row.message) as { info?: MessageRecord["info"] }
+          const info = parsed.info ?? (parsed as MessageRecord["info"])
+          const entry = { info, parts: [] as PartRecord[] }
+          result.push(entry)
+          current.value = entry
+        }
+        if (!row.part) continue
+        current.value?.parts.push(JSON.parse(row.part) as PartRecord)
+      }
+      return result
+    }
+
+    if (afterID && limit !== undefined) {
+      const rows = db()
+        .query<{ messageID: string; message: string; part: string | null }, [string, string, string, number]>(
+          `
+          SELECT m.id as messageID, m.data as message, p.data as part
+          FROM messages m
+          LEFT JOIN message_parts p
+            ON p.sessionID = m.sessionID AND p.messageID = m.id
+          WHERE m.sessionID = ? AND m.id IN (
+            SELECT id FROM messages WHERE sessionID = ? AND id < ? ORDER BY id DESC LIMIT ?
+          )
+          ORDER BY m.id DESC, p.id ASC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, afterID, limit)
+      return groupRows(rows)
+    }
+
+    if (afterID) {
+      const rows = db()
+        .query<{ messageID: string; message: string; part: string | null }, [string, string, string]>(
+          `
+          SELECT m.id as messageID, m.data as message, p.data as part
+          FROM messages m
+          LEFT JOIN message_parts p
+            ON p.sessionID = m.sessionID AND p.messageID = m.id
+          WHERE m.sessionID = ? AND m.id IN (
+            SELECT id FROM messages WHERE sessionID = ? AND id < ? ORDER BY id DESC
+          )
+          ORDER BY m.id DESC, p.id ASC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, afterID)
+      return groupRows(rows)
+    }
+
+    if (limit !== undefined) {
+      const rows = db()
+        .query<{ messageID: string; message: string; part: string | null }, [string, string, number]>(
+          `
+          SELECT m.id as messageID, m.data as message, p.data as part
+          FROM messages m
+          LEFT JOIN message_parts p
+            ON p.sessionID = m.sessionID AND p.messageID = m.id
+          WHERE m.sessionID = ? AND m.id IN (
+            SELECT id FROM messages WHERE sessionID = ? ORDER BY id DESC LIMIT ?
+          )
+          ORDER BY m.id DESC, p.id ASC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, limit)
+      return groupRows(rows)
+    }
+
+    const rows = db()
+      .query<{ messageID: string; message: string; part: string | null }, [string, string]>(
+        `
+        SELECT m.id as messageID, m.data as message, p.data as part
+        FROM messages m
+        LEFT JOIN message_parts p
+          ON p.sessionID = m.sessionID AND p.messageID = m.id
+        WHERE m.sessionID = ? AND m.id IN (
+          SELECT id FROM messages WHERE sessionID = ? ORDER BY id DESC
+        )
+        ORDER BY m.id DESC, p.id ASC
+        `,
+      )
+      .all(input.sessionID, input.sessionID)
+    return groupRows(rows)
   }
 
   export function removeMessage(sessionID: string, messageID: string) {

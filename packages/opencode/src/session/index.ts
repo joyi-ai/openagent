@@ -418,23 +418,25 @@ export namespace Session {
       afterID: Identifier.schema("message").optional(), // Only load messages older than this ID
     }),
     async (input) => {
-      const ids = await Storage.listMessageIDs({
+      const page = StorageSqlite.listMessagesWithPartsPage({
         sessionID: input.sessionID,
         limit: input.limit,
         afterID: input.afterID,
       })
-      const ordered = ids.slice().sort((a, b) => a.localeCompare(b))
-      const result = [] as MessageV2.WithParts[]
-      for (const id of ordered) {
-        result.push(
-          await MessageV2.get({
-            sessionID: input.sessionID,
-            messageID: id,
-          }),
-        )
-      }
-      result.reverse()
-      return result
+      return page.map((item) => {
+        const info = item.info as MessageV2.Info
+        const cached = MessageV2.PartStore.peekParts(info.sessionID, info.id)
+        if (cached) {
+          return {
+            info,
+            parts: cached,
+          }
+        }
+        return {
+          info,
+          parts: item.parts as MessageV2.Part[],
+        }
+      })
     },
   )
 
