@@ -144,6 +144,10 @@ export namespace LSPClient {
       get connection() {
         return connection
       },
+      fileVersion(input: { path: string }) {
+        const full = path.isAbsolute(input.path) ? input.path : path.resolve(Instance.directory, input.path)
+        return files[full]
+      },
       notify: {
         async open(input: { path: string }) {
           input.path = path.isAbsolute(input.path) ? input.path : path.resolve(Instance.directory, input.path)

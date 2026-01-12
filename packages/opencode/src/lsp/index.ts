@@ -386,7 +386,18 @@ export namespace LSP {
   export async function documentSymbol(uri: string) {
     const file = fileURLToPath(uri)
     const stats = await Bun.file(file).stat().catch(() => undefined)
-    const version = stats ? `${stats.mtime.getTime()}:${stats.size}` : undefined
+    const existing = await state().then((x) => x.clients)
+    const buffer = existing.flatMap((client) => {
+      const value = client.fileVersion({ path: file })
+      if (value === undefined) return []
+      return [`${client.serverID}:${value}`]
+    })
+    const bufferVersion = buffer.length ? buffer.sort().join("|") : undefined
+    const diskVersion = stats ? `${stats.mtime.getTime()}:${stats.size}` : undefined
+    const parts: string[] = []
+    if (diskVersion) parts.push(`disk:${diskVersion}`)
+    if (bufferVersion) parts.push(`buffer:${bufferVersion}`)
+    const version = parts.length ? parts.join("|") : undefined
     const symbols = symbolState()
     const cached = version ? symbols.cache.get(file) : undefined
     if (cached && cached.version === version) return cached.value
@@ -395,7 +406,8 @@ export namespace LSP {
     const inflight = symbols.pending.get(key)
     if (inflight) return inflight
 
-    const request = run(file, (client) =>
+    const clients = await getClients(file)
+    const tasks = clients.map((client) =>
       client.connection
         .sendRequest("textDocument/documentSymbol", {
           textDocument: {
@@ -404,6 +416,7 @@ export namespace LSP {
         })
         .catch(() => []),
     )
+    const request = Promise.all(tasks)
       .then((result) => result.flat() as (LSP.DocumentSymbol | LSP.Symbol)[])
       .then((result) => result.filter(Boolean))
       .then((result) => {

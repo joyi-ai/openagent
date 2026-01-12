@@ -130,6 +130,7 @@ export namespace File {
       const fetching = { value: false }
       const dirty = { value: true }
       const last = { value: 0 }
+      const ready = { value: false }
       const useWatcher = Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER && !Flag.OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER
       const interval = useWatcher ? 120000 : 5000
 
@@ -296,16 +297,22 @@ export namespace File {
           fetching.value = false
           dirty.value = false
           last.value = Date.now()
+          ready.value = true
           return
         }
 
-        resetCache()
+        const next: string[] = []
         for await (const file of Ripgrep.files({ cwd: Instance.directory })) {
+          next.push(file)
+        }
+        resetCache()
+        for (const file of next) {
           addFile(file)
         }
         fetching.value = false
         dirty.value = false
         last.value = Date.now()
+        ready.value = true
       }
       fn()
 
@@ -319,6 +326,9 @@ export namespace File {
             }
           }
           return cache
+        },
+        ready() {
+          return ready.value
         },
         subs,
       }
@@ -647,7 +657,9 @@ export namespace File {
 
     const relative = path.relative(Instance.directory, root)
     const prefix = relative && relative !== "." ? relative + path.sep : ""
-    const result = await state().then((x) => x.files())
+    const entry = await state()
+    if (!entry.ready()) return
+    const result = await entry.files()
     const files: string[] = []
     const truncated = { value: false }
     const ig = buildIgnore(input.ignore)
