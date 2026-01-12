@@ -3,6 +3,7 @@ import {
   Message as MessageType,
   Part as PartType,
   type PermissionRequest,
+  ReasoningPart,
   TextPart,
   ToolPart,
 } from "@opencode-ai/sdk/v2/client"
@@ -351,6 +352,42 @@ export function SessionTurn(
     return result
   })
 
+  const response = createMemo(() => lastTextPart()?.text)
+  const responsePartId = createMemo(() => lastTextPart()?.id)
+
+  const reasoning = createMemo(() => {
+    if (stepsToolParts().length === 0) return
+
+    const texts: string[] = []
+    for (const msg of assistantMessages()) {
+      const msgParts = data.store.part[msg.id] ?? emptyParts
+      for (const part of msgParts) {
+        if (!part) continue
+        if (part.type !== "reasoning") continue
+        const text = (part as ReasoningPart).text ?? ""
+        if (!text.trim()) continue
+        texts.push(text)
+      }
+    }
+
+    if (texts.length === 0) return
+
+    const full = texts.join("\n").replace(/\r\n/g, "\n").trim()
+    if (!full) return
+
+    const maxChars = 900
+    const maxLines = 10
+
+    let tail = full.length > maxChars ? full.slice(full.length - maxChars) : full
+    const lines = tail.split("\n")
+    if (lines.length > maxLines) tail = lines.slice(lines.length - maxLines).join("\n")
+    tail = tail.trim()
+    if (!tail) return
+
+    if (tail.length < full.length) return `…${tail.trimStart()}`
+    return tail
+  })
+
   const commentary = createMemo(() => {
     if (stepsToolParts().length === 0) return
 
@@ -468,9 +505,6 @@ export function SessionTurn(
     if (s.type !== "retry") return
     return s
   })
-
-  const response = createMemo(() => lastTextPart()?.text)
-  const responsePartId = createMemo(() => lastTextPart()?.id)
   const hasDiffs = createMemo(() => message()?.summary?.diffs?.length)
   const hideResponsePart = createMemo(() => !working() && !!responsePartId())
 
@@ -507,6 +541,7 @@ export function SessionTurn(
     diffLimit: diffInit,
     status: rawStatus(),
     duration: duration(),
+    reasoningExpanded: false,
   })
 
   createEffect(
@@ -515,6 +550,17 @@ export function SessionTurn(
       () => {
         setStore("diffsOpen", [])
         setStore("diffLimit", diffInit)
+        setStore("reasoningExpanded", false)
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      working,
+      (next, prev) => {
+        if (prev === true && next === false) setStore("reasoningExpanded", false)
       },
       { defer: true },
     ),
@@ -644,6 +690,24 @@ export function SessionTurn(
                       <div data-slot="session-turn-steps-section">
                         <Show when={commentary()}>
                           {(text) => <div data-slot="session-turn-commentary">{text()}</div>}
+                        </Show>
+                        <Show when={reasoning()}>
+                          {(text) => (
+                            <div data-slot="session-turn-reasoning-section">
+                              <Show when={!working()}>
+                                <button
+                                  type="button"
+                                  data-slot="session-turn-reasoning-trigger"
+                                  onClick={() => setStore("reasoningExpanded", (x) => !x)}
+                                >
+                                  Reasoning
+                                </button>
+                              </Show>
+                              <Show when={working() || store.reasoningExpanded}>
+                                <div data-slot="session-turn-reasoning">{text()}</div>
+                              </Show>
+                            </div>
+                          )}
                         </Show>
                         <StepsContainer
                           toolParts={stepsToolParts()}

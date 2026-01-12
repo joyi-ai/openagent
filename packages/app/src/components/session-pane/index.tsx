@@ -1,10 +1,11 @@
-import { Show, createMemo, createEffect, on, onMount, onCleanup, type Accessor } from "solid-js"
+import { For, Show, createMemo, createEffect, on, onMount, onCleanup, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useParams, useNavigate } from "@solidjs/router"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
 import { Icon } from "@opencode-ai/ui/icon"
+import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { DateTime } from "luxon"
 import { createDraggable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
@@ -62,9 +63,12 @@ export function SessionPane(props: SessionPaneProps) {
 
   // Local state
   const [store, setStore] = createStore({
-    stepsExpanded: false,
+    stepsExpanded: {} as Record<string, boolean>,
     userInteracted: false,
     activeDraggable: undefined as string | undefined,
+    turnLimit: 30,
+    didRestoreScroll: {} as Record<string, boolean>,
+    loadingMore: false,
   })
 
   // Session ID (from props in multi mode, from params in single mode)
@@ -104,6 +108,14 @@ export function SessionPane(props: SessionPaneProps) {
     sessionId,
   })
 
+  const renderedUserMessages = createMemo(() => {
+    const messages = sessionMessages.visibleUserMessages()
+    const limit = store.turnLimit
+    if (limit <= 0) return []
+    if (messages.length <= limit) return messages
+    return messages.slice(messages.length - limit)
+  })
+
   // Focus state
   const isFocused = createMemo(() => props.isFocused?.() ?? true)
 
@@ -132,15 +144,20 @@ export function SessionPane(props: SessionPaneProps) {
 
   createEffect(() => {
     const session = sessionId()
-    const active = sessionMessages.activeMessage()
     if (!session) return
-    if (!active) return
+
+    const visible = renderedUserMessages()
+    if (visible.length === 0) return
+
+    const visibleIds = new Set(visible.map((m) => m.id))
     const messages = sync.data.message[session] ?? []
     for (const msg of messages) {
-      if (msg.id === active.id) {
+      if (msg.role === "user" && visibleIds.has(msg.id)) {
         void sync.session.ensureParts(session, msg.id)
+        continue
       }
-      if ("parentID" in msg && msg.parentID === active.id) {
+
+      if ("parentID" in msg && visibleIds.has(msg.parentID)) {
         void sync.session.ensureParts(session, msg.id)
       }
     }
@@ -152,7 +169,10 @@ export function SessionPane(props: SessionPaneProps) {
       (isWorking, prevWorking) => {
         if (props.mode !== "multi") return
         if (isWorking) return
-        if (prevWorking) setStore("stepsExpanded", false)
+        if (!prevWorking) return
+        const id = sessionMessages.lastUserMessage()?.id
+        if (!id) return
+        setStore("stepsExpanded", id, false)
       },
     ),
   )
@@ -193,6 +213,17 @@ export function SessionPane(props: SessionPaneProps) {
     ),
   )
 
+  createEffect(
+    on(
+      () => sessionId(),
+      (id) => {
+        if (!id) return
+        setStore("turnLimit", 30)
+      },
+      { defer: true },
+    ),
+  )
+
   createEffect(() => {
     if (props.mode !== "multi") return
     if (!isFocused()) return
@@ -207,7 +238,11 @@ export function SessionPane(props: SessionPaneProps) {
     sessionKey,
     isEnabled: props.mode === "multi" ? isFocused : () => true,
     onNavigateMessage: sessionMessages.navigateByOffset,
-    onToggleSteps: () => setStore("stepsExpanded", (x) => !x),
+    onToggleSteps: () => {
+      const id = sessionMessages.activeMessage()?.id
+      if (!id) return
+      setStore("stepsExpanded", id, (x) => !x)
+    },
     onResetMessageToLast: sessionMessages.resetToLast,
     setActiveMessage: (msg) => sessionMessages.setActiveMessage(msg as UserMessage | undefined),
     userMessages: sessionMessages.userMessages,
@@ -260,6 +295,172 @@ export function SessionPane(props: SessionPaneProps) {
 
   const sessionTurnPadding = createMemo(() => (props.mode === "single" ? "pb-20" : "pb-0"))
 
+  const desktopAutoScroll = createAutoScroll({
+    working,
+    onUserInteracted: () => {
+      setStore("userInteracted", true)
+    },
+  })
+
+  let scrollFrame: number | undefined
+  let scrollPending: { x: number; y: number } | undefined
+
+  let desktopScrollEl: HTMLDivElement | undefined
+  const setDesktopScrollRef = (el: HTMLDivElement | undefined) => {
+    desktopScrollEl = el
+    desktopAutoScroll.scrollRef(el)
+    requestAnimationFrame(() => restoreDesktopScroll())
+  }
+
+  const restoreDesktopScroll = (retries = 0) => {
+    const root = desktopScrollEl
+    if (!root) return
+
+    const key = sessionKey()
+    if (store.didRestoreScroll[key]) return
+    if (renderedUserMessages().length === 0) return
+
+    const saved = view().scroll("session")
+
+    // Wait for content to be scrollable - content may not have rendered yet
+    if (root.scrollHeight <= root.clientHeight && retries < 10) {
+      requestAnimationFrame(() => restoreDesktopScroll(retries + 1))
+      return
+    }
+
+    if (!saved) {
+      desktopAutoScroll.forceScrollToBottom()
+      setStore("didRestoreScroll", key, true)
+      return
+    }
+
+    if (root.scrollTop !== saved.y) root.scrollTop = saved.y
+    if (root.scrollLeft !== saved.x) root.scrollLeft = saved.x
+    setStore("didRestoreScroll", key, true)
+
+    if (!working()) return
+    const distanceFromBottom = root.scrollHeight - root.clientHeight - root.scrollTop
+    if (distanceFromBottom < 64) return
+    desktopAutoScroll.handleInteraction()
+  }
+
+  createEffect(
+    on(
+      () => renderedUserMessages().length,
+      () => {
+        requestAnimationFrame(() => restoreDesktopScroll())
+      },
+      { defer: true },
+    ),
+  )
+
+  const scrollToMessage = (id: string, behavior: ScrollBehavior = "smooth") => {
+    const root = desktopScrollEl
+    if (!root) return
+
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(id)
+        : id.replaceAll('"', '\\"')
+
+    const el = root.querySelector(`[data-message="${escaped}"]`) as HTMLElement | null
+    if (!el) return
+    el.scrollIntoView({ block: "center", behavior })
+  }
+
+  const handleMessageSelect = (message: UserMessage) => {
+    const visible = sessionMessages.visibleUserMessages()
+    const index = visible.findIndex((m) => m.id === message.id)
+    const needed = index === -1 ? 0 : visible.length - index
+    const expandsWindow = needed > store.turnLimit
+    if (expandsWindow) setStore("turnLimit", needed + 5)
+
+    sessionMessages.setActiveMessage(message)
+
+    const last = sessionMessages.lastUserMessage()?.id
+    if (last && message.id === last) {
+      desktopAutoScroll.forceScrollToBottom()
+      return
+    }
+
+    if (expandsWindow) {
+      setTimeout(() => scrollToMessage(message.id), 0)
+      return
+    }
+
+    scrollToMessage(message.id)
+  }
+
+  createEffect(
+    on(
+      () => sessionMessages.activeMessage()?.id,
+      (id, prev) => {
+        if (!id) return
+        if (!prev) return
+        if (id === prev) return
+        if (working()) return
+        scrollToMessage(id)
+      },
+      { defer: true },
+    ),
+  )
+
+  const handleDesktopScroll = () => {
+    desktopAutoScroll.handleScroll()
+
+    const root = desktopScrollEl
+    const id = sessionId()
+    if (!root) return
+    if (!id) return
+
+    scrollPending = {
+      x: root.scrollLeft,
+      y: root.scrollTop,
+    }
+    if (scrollFrame === undefined) {
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = undefined
+        const next = scrollPending
+        scrollPending = undefined
+        if (!next) return
+        view().setScroll("session", next)
+      })
+    }
+
+    if (store.loadingMore) return
+    if (root.scrollTop > 200) return
+
+    const visible = sessionMessages.visibleUserMessages()
+    const beforeHeight = root.scrollHeight
+    const beforeTop = root.scrollTop
+
+    if (store.turnLimit < visible.length) {
+      setStore("turnLimit", (x) => Math.min(visible.length, x + 20))
+      requestAnimationFrame(() => {
+        const afterHeight = root.scrollHeight
+        root.scrollTop = beforeTop + (afterHeight - beforeHeight)
+      })
+      return
+    }
+
+    if (!sync.session.history.more(id)) return
+    if (sync.session.history.loading(id)) return
+
+    setStore("loadingMore", true)
+    void sync.session.history
+      .loadMore(id, 50)
+      .then(() => {
+        setStore("turnLimit", (x) => x + 50)
+        requestAnimationFrame(() => {
+          const afterHeight = root.scrollHeight
+          root.scrollTop = beforeTop + (afterHeight - beforeHeight)
+        })
+      })
+      .finally(() => {
+        setStore("loadingMore", false)
+      })
+  }
+
   // New session view
   const NewSessionView = () => (
     <div class="relative size-full flex flex-col pb-45 justify-end items-start gap-4 flex-[1_0_0] self-stretch max-w-200 mx-auto px-6">
@@ -295,39 +496,50 @@ export function SessionPane(props: SessionPaneProps) {
   // Desktop session content
   const DesktopSessionContent = () => (
     <Show when={sessionId()} fallback={props.mode === "single" ? <NewSessionView /> : null}>
-      <div class="flex items-start justify-start h-full min-h-0">
+      <div class="flex items-stretch justify-start h-full min-h-0">
         <SessionMessageRail
           messages={sessionMessages.visibleUserMessages()}
           current={sessionMessages.activeMessage()}
-          onMessageSelect={sessionMessages.setActiveMessage}
+          onMessageSelect={handleMessageSelect}
           wide={!showTabs()}
         />
-        <Show when={sessionMessages.activeMessage()}>
-          <SessionTurn
-            sessionID={sessionId()!}
-            messageID={sessionMessages.activeMessage()!.id}
-            lastUserMessageID={sessionMessages.lastUserMessage()?.id}
-            stepsExpanded={store.stepsExpanded}
-            onStepsExpandedToggle={() => setStore("stepsExpanded", (x) => !x)}
-            onUserInteracted={() => setStore("userInteracted", true)}
-            actions={{
-              onEdit: messageActions.editMessage,
-              onRetry: messageActions.retryMessage,
-              onDelete: messageActions.deleteMessage,
-            }}
-            classes={{
-              root: `${sessionTurnPadding()} flex-1 min-w-0`,
-              content: sessionTurnPadding(),
-              container:
-                "w-full " +
-                (!showTabs()
-                  ? "max-w-200 mx-auto px-6"
-                  : sessionMessages.visibleUserMessages().length > 1
-                    ? "pr-6 pl-18"
-                    : "px-6"),
-            }}
-          />
-        </Show>
+        <div
+          ref={setDesktopScrollRef}
+          onScroll={handleDesktopScroll}
+          onClick={desktopAutoScroll.handleInteraction}
+          class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
+        >
+          <div ref={desktopAutoScroll.contentRef} class="flex flex-col gap-12">
+            <For each={renderedUserMessages()}>
+              {(message) => (
+                <SessionTurn
+                  sessionID={sessionId()!}
+                  messageID={message.id}
+                  lastUserMessageID={sessionMessages.lastUserMessage()?.id}
+                  stepsExpanded={store.stepsExpanded[message.id] ?? false}
+                  onStepsExpandedToggle={() => setStore("stepsExpanded", message.id, (x) => !x)}
+                  onUserInteracted={() => setStore("userInteracted", true)}
+                  actions={{
+                    onEdit: messageActions.editMessage,
+                    onRetry: messageActions.retryMessage,
+                    onDelete: messageActions.deleteMessage,
+                  }}
+                  classes={{
+                    root: "min-w-0 w-full relative !h-auto",
+                    content: "flex flex-col justify-between !overflow-visible !h-auto",
+                    container:
+                      "w-full " +
+                      (!showTabs()
+                        ? "max-w-200 mx-auto px-6"
+                        : sessionMessages.visibleUserMessages().length > 1
+                          ? "pr-6 pl-18"
+                          : "px-6"),
+                  }}
+                />
+              )}
+            </For>
+          </div>
+        </div>
       </div>
     </Show>
   )
