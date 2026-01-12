@@ -380,14 +380,14 @@ export function SessionPane(props: SessionPaneProps) {
         />
       </Show>
 
-      {/* Dim overlay for focused panel in multi-pane mode */}
-      <Show when={props.mode === "multi" && isFocused()}>
+      {/* Dim overlay for unfocused panels in multi-pane mode */}
+      <Show when={props.mode === "multi" && !isFocused()}>
         <div
           style={{
             position: "absolute",
             inset: 0,
-            "z-index": 5,
-            "background-color": theme.mode() === "light" ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.1)",
+            "z-index": 20,
+            "background-color": theme.mode() === "light" ? "rgba(0, 0, 0, 0.1)" : "rgba(0, 0, 0, 0.2)",
             "pointer-events": "none",
           }}
         />
