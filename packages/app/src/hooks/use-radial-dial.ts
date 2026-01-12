@@ -62,6 +62,9 @@ export function useRadialDial(options: UseRadialDialOptions): UseRadialDialRetur
     // Only respond to right-click
     if (e.button !== 2) return
 
+    // Don't trigger if left button is also pressed (that's for floating selector)
+    if (e.buttons & 1) return
+
     e.preventDefault()
     isHolding = true
 

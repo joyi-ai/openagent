@@ -23,6 +23,7 @@ target
 
 # Local dev files
 opencode-dev
+tmpclaude-*
 logs/
 .env
 .env.local

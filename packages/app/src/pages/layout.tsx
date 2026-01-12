@@ -64,6 +64,7 @@ import { navStart } from "@/utils/perf"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogWorktreeCleanup } from "@/components/dialog-worktree-cleanup"
 import { useServer } from "@/context/server"
+import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
 
 export default function Layout(props: ParentProps) {
   const [store, setStore] = createStore({
@@ -1416,7 +1417,14 @@ export default function Layout(props: ParentProps) {
           </div>
         </div>
 
-        <main class="size-full overflow-x-hidden flex flex-col items-start contain-strict">{props.children}</main>
+        <div class="relative flex-1 min-h-0">
+          <main class="size-full overflow-x-hidden flex flex-col items-start contain-strict">{props.children}</main>
+          <Show when={platform.platform === "desktop"}>
+            <div class="absolute inset-x-0 bottom-24 md:bottom-28 z-50 flex justify-center pointer-events-none">
+              <VoiceRecordingWidget />
+            </div>
+          </Show>
+        </div>
       </div>
       <Toast.Region />
     </div>

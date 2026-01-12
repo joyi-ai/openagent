@@ -222,13 +222,14 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (suspended()) return
-      // Ignore key repeat events to prevent rapid-fire triggering
-      if (event.repeat) return
+      const isRepeat = event.repeat
 
       const paletteKeybinds = parseKeybind("mod+shift+p")
       if (matchKeybind(paletteKeybinds, event)) {
         event.preventDefault()
-        showPalette()
+        if (!isRepeat) {
+          showPalette()
+        }
         return
       }
 
@@ -239,7 +240,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         const keybinds = parseKeybind(option.keybind)
         if (matchKeybind(keybinds, event)) {
           event.preventDefault()
-          option.onSelect?.("keybind")
+          if (!isRepeat) {
+            option.onSelect?.("keybind")
+          }
           return
         }
       }
