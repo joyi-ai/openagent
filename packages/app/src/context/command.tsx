@@ -76,7 +76,13 @@ export function parseKeybind(config: string): Keybind[] {
 
 export function matchKeybind(keybinds: Keybind[], event: KeyboardEvent): boolean {
   const rawKey = event.key.toLowerCase()
-  const eventKey = rawKey === " " ? "space" : rawKey === "spacebar" ? "space" : rawKey
+  const normalized = rawKey === " " || rawKey === "spacebar" ? "space" : rawKey
+  const eventKey =
+    normalized === "dead" && event.code === "Backquote"
+      ? "`"
+      : normalized === "dead" && event.code === "Quote"
+        ? "'"
+        : normalized
 
   for (const kb of keybinds) {
     const keyMatch = kb.key === eventKey

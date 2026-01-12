@@ -37,9 +37,15 @@ export function useKeybindCapture(initialKeybind: string, options?: KeybindCaptu
     if (e.shiftKey) parts.push("shift")
 
     const key = e.key.toLowerCase()
-    const normalized = key === " " ? "space" : key === "spacebar" ? "space" : key
-    if (!["control", "meta", "alt", "shift"].includes(normalized)) {
-      parts.push(normalized)
+    const normalized = key === " " || key === "spacebar" ? "space" : key
+    const eventKey =
+      normalized === "dead" && e.code === "Backquote"
+        ? "`"
+        : normalized === "dead" && e.code === "Quote"
+          ? "'"
+          : normalized
+    if (!["control", "meta", "alt", "shift"].includes(eventKey)) {
+      parts.push(eventKey)
       const newKeybind = parts.join("+")
       setCapturedKeybind(newKeybind)
       setIsCapturing(false)
