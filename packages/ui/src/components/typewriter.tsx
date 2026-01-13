@@ -6,18 +6,19 @@ export const Typewriter = <T extends ValidComponent = "p">(props: { text?: strin
   const [store, setStore] = createStore({
     typing: false,
     displayed: "",
-    cursor: true,
+    cursor: false,
   })
 
   createEffect(() => {
     const text = props.text
-    if (!text) return
+    if (!text) {
+      setStore({ typing: false, displayed: "", cursor: false })
+      return
+    }
 
     let i = 0
     const timeouts: ReturnType<typeof setTimeout>[] = []
-    setStore("typing", true)
-    setStore("displayed", "")
-    setStore("cursor", true)
+    setStore({ typing: true, displayed: "", cursor: true })
 
     const getTypingDelay = () => {
       const random = Math.random()

@@ -1,6 +1,7 @@
 import { Index, createEffect, createSignal, on, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "@opencode-ai/ui/theme"
+import type { CustomGradient } from "@opencode-ai/ui/theme/context"
 
 type RGB = {
   r: number
@@ -78,6 +79,96 @@ function parseColor(value: string): RGB | null {
   return parseRgb(value)
 }
 
+type HSL = { h: number; s: number; l: number }
+
+function rgbToHsl(rgb: RGB): HSL {
+  const r = rgb.r / 255
+  const g = rgb.g / 255
+  const b = rgb.b / 255
+
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+
+  if (max === min) {
+    return { h: 0, s: 0, l }
+  }
+
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else h = ((r - g) / d + 4) / 6
+
+  return { h, s, l }
+}
+
+function hslToRgb(hsl: HSL): RGB {
+  const { h, s, l } = hsl
+
+  if (s === 0) {
+    const v = Math.round(l * 255)
+    return { r: v, g: v, b: v }
+  }
+
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1
+    if (t > 1) t -= 1
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+    return p
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+
+  return {
+    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h) * 255),
+    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  }
+}
+
+function applyAdjustments(rgb: RGB, saturation: number, brightness: number, contrast: number): RGB {
+  const hsl = rgbToHsl(rgb)
+
+  // Apply saturation adjustment (100 = no change)
+  const satFactor = saturation / 100
+  hsl.s = Math.min(1, Math.max(0, hsl.s * satFactor))
+
+  // Apply brightness adjustment (100 = no change)
+  const brightFactor = brightness / 100
+  hsl.l = Math.min(1, Math.max(0, hsl.l * brightFactor))
+
+  let result = hslToRgb(hsl)
+
+  // Apply contrast adjustment (100 = no change)
+  const contrastFactor = (contrast - 100) / 100
+  const adjust = (v: number) => {
+    const normalized = v / 255 - 0.5
+    const adjusted = normalized * (1 + contrastFactor) + 0.5
+    return Math.round(Math.min(255, Math.max(0, adjusted * 255)))
+  }
+
+  result = {
+    r: adjust(result.r),
+    g: adjust(result.g),
+    b: adjust(result.b),
+  }
+
+  return result
+}
+
+function getCustomPalette(custom: CustomGradient): RGB[] {
+  return custom.colors.map((hex) => {
+    const rgb = parseHex(hex) ?? { r: 120, g: 120, b: 120 }
+    return applyAdjustments(rgb, custom.saturation, custom.brightness, custom.contrast)
+  })
+}
+
 function readPalette(mode: "light" | "dark", relative = false): RGB[] {
   const root = getComputedStyle(document.documentElement)
   const fallback = parseColor(root.getPropertyValue("--text-strong")) ?? { r: 120, g: 120, b: 120 }
@@ -124,19 +215,20 @@ const BASE_POSITIONS = [
   { x: 52, y: 54 },
 ]
 
-function blobs(colors: RGB[], crisp = false): Blob[] {
+function blobs(colors: RGB[], crisp = false, blurMultiplier = 1): Blob[] {
   const list: Blob[] = []
   const blurRange = crisp ? { min: 20, max: 40 } : { min: 120, max: 200 }
 
   for (let i = 0; i < BASE_POSITIONS.length; i++) {
     const b = BASE_POSITIONS[i]
     const size = Math.round(rand(1020, 1280))
+    const baseBlur = rand(blurRange.min, blurRange.max)
     list.push({
       x: rand(b.x - 6, b.x + 6),
       y: rand(b.y - 6, b.y + 6),
       size,
       scale: rand(0.9, 1.15),
-      blur: Math.round(rand(blurRange.min, blurRange.max)),
+      blur: Math.round(baseBlur * blurMultiplier),
       alpha: rand(0.88, 1.0),
       color: colors[i],
     })
@@ -149,17 +241,37 @@ function updateBlobPositions(
   setStore: (path: "blobs", index: number, key: keyof Blob, value: number | RGB) => void,
   colors: RGB[],
   crisp = false,
+  blurMultiplier = 1,
 ) {
   const blurRange = crisp ? { min: 20, max: 40 } : { min: 120, max: 200 }
 
   for (let i = 0; i < BASE_POSITIONS.length; i++) {
     const b = BASE_POSITIONS[i]
+    const baseBlur = rand(blurRange.min, blurRange.max)
     setStore("blobs", i, "x", rand(b.x - 5, b.x + 5))
     setStore("blobs", i, "y", rand(b.y - 5, b.y + 5))
     setStore("blobs", i, "scale", rand(0.9, 1.15))
-    setStore("blobs", i, "blur", Math.round(rand(blurRange.min, blurRange.max)))
+    setStore("blobs", i, "blur", Math.round(baseBlur * blurMultiplier))
     setStore("blobs", i, "alpha", rand(0.88, 1.0))
     setStore("blobs", i, "color", colors[i])
+  }
+}
+
+function updateBlobSettingsOnly(
+  setStore: (path: "blobs", index: number, key: keyof Blob, value: number | RGB) => void,
+  colors: RGB[],
+  blurMultiplier = 1,
+  currentBlobs: Blob[],
+  crisp = false,
+) {
+  const blurRange = crisp ? { min: 20, max: 40 } : { min: 120, max: 200 }
+  const baseBlur = (blurRange.min + blurRange.max) / 2
+  for (let i = 0; i < colors.length; i++) {
+    setStore("blobs", i, "color", colors[i])
+    // Keep relative blur values but apply multiplier
+    const currentBaseBlur = currentBlobs[i]?.blur ?? baseBlur
+    const originalMultiplier = currentBaseBlur / baseBlur
+    setStore("blobs", i, "blur", Math.round(baseBlur * originalMultiplier * blurMultiplier))
   }
 }
 
@@ -176,32 +288,53 @@ export function ShiftingGradient(props: { class?: string }) {
 
   const isCrisp = () => theme.activeGradientMode() === "crisp"
   const isRelative = () => theme.activeGradientColor() === "relative"
+  const getBlurMultiplier = () => {
+    const custom = theme.activeCustomGradient()
+    return custom ? custom.blur / 100 : 1
+  }
+
+  const getPalette = () => {
+    const custom = theme.activeCustomGradient()
+    if (custom) {
+      return getCustomPalette(custom)
+    }
+    return readPalette(theme.mode(), isRelative())
+  }
 
   onMount(() => {
-    const palette = readPalette(theme.mode(), isRelative())
+    const palette = getPalette()
     setStore("palette", palette)
-    setStore("blobs", blobs(palette, isCrisp()))
+    setStore("blobs", blobs(palette, isCrisp(), getBlurMultiplier()))
     requestAnimationFrame(() => setStore("ready", true))
   })
 
   createEffect(
     on(
-      () => [
-        theme.themeId(),
-        theme.mode(),
-        theme.activeGradientMode(),
-        theme.activeGradientColor(),
-        theme.previewThemeId(),
-      ],
       () => {
+        const custom = theme.activeCustomGradient()
+        return [
+          theme.themeId(),
+          theme.mode(),
+          theme.activeGradientMode(),
+          theme.activeGradientColor(),
+          theme.previewThemeId(),
+          custom ? JSON.stringify(custom) : null,
+        ]
+      },
+      () => {
+        const isPreviewing = theme.isCustomGradientPreviewing()
+        const blurMult = getBlurMultiplier()
         // Wait for CSS custom properties to be applied before reading the new palette
         requestAnimationFrame(() => {
-          const palette = readPalette(theme.mode(), isRelative())
+          const palette = getPalette()
           setStore("palette", palette)
           if (store.blobs.length === 0) {
-            setStore("blobs", blobs(palette, isCrisp()))
+            setStore("blobs", blobs(palette, isCrisp(), blurMult))
+          } else if (isPreviewing) {
+            // Only update colors and blur when previewing advanced settings (no position animation)
+            updateBlobSettingsOnly(setStore, palette, blurMult, store.blobs, isCrisp())
           } else {
-            updateBlobPositions(setStore, palette, isCrisp())
+            updateBlobPositions(setStore, palette, isCrisp(), blurMult)
           }
         })
       },
@@ -213,11 +346,12 @@ export function ShiftingGradient(props: { class?: string }) {
     on(
       () => trigger(),
       () => {
-        const palette = store.palette.length > 0 ? store.palette : readPalette(theme.mode(), isRelative())
+        const palette = store.palette.length > 0 ? store.palette : getPalette()
+        const blurMult = getBlurMultiplier()
         if (store.blobs.length === 0) {
-          setStore("blobs", blobs(palette, isCrisp()))
+          setStore("blobs", blobs(palette, isCrisp(), blurMult))
         } else {
-          updateBlobPositions(setStore, palette, isCrisp())
+          updateBlobPositions(setStore, palette, isCrisp(), blurMult)
         }
       },
       { defer: true },

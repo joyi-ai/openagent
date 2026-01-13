@@ -10,6 +10,16 @@ export type ColorScheme = "light" | "dark" | "system"
 export type GradientMode = "soft" | "crisp"
 export type GradientColor = "relative" | "strong"
 
+export interface CustomGradient {
+  name: string
+  saturation: number
+  brightness: number
+  contrast: number
+  blur: number
+  noise: number
+  colors: [string, string, string, string, string]
+}
+
 const STORAGE_KEYS = {
   THEME_ID: "opencode-theme-id",
   COLOR_SCHEME: "opencode-color-scheme",
@@ -17,6 +27,8 @@ const STORAGE_KEYS = {
   THEME_CSS_DARK: "opencode-theme-css-dark",
   GRADIENT_MODE: "opencode-gradient-mode",
   GRADIENT_COLOR: "opencode-gradient-color",
+  CUSTOM_GRADIENT: "opencode-custom-gradient",
+  SAVED_GRADIENTS: "opencode-saved-gradients",
 } as const
 
 const THEME_STYLE_ID = "oc-theme"
@@ -81,10 +93,13 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       mode: getSystemMode(),
       gradientMode: "soft" as GradientMode,
       gradientColor: "strong" as GradientColor,
+      customGradient: null as CustomGradient | null,
+      savedGradients: [] as CustomGradient[],
       previewThemeId: null as string | null,
       previewScheme: null as ColorScheme | null,
       previewGradientMode: null as GradientMode | null,
       previewGradientColor: null as GradientColor | null,
+      previewCustomGradient: null as CustomGradient | null,
     })
 
     onMount(() => {
@@ -115,6 +130,27 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       const savedGradientColor = localStorage.getItem(STORAGE_KEYS.GRADIENT_COLOR) as GradientColor | null
       if (savedGradientColor && (savedGradientColor === "relative" || savedGradientColor === "strong")) {
         setStore("gradientColor", savedGradientColor)
+      }
+      const savedCustomGradient = localStorage.getItem(STORAGE_KEYS.CUSTOM_GRADIENT)
+      if (savedCustomGradient) {
+        try {
+          const parsed = JSON.parse(savedCustomGradient) as CustomGradient
+          if (parsed.name && typeof parsed.saturation === "number" && Array.isArray(parsed.colors) && parsed.colors.length === 5) {
+            setStore("customGradient", parsed)
+          }
+        } catch {}
+      }
+      const savedGradients = localStorage.getItem(STORAGE_KEYS.SAVED_GRADIENTS)
+      if (savedGradients) {
+        try {
+          const parsed = JSON.parse(savedGradients) as CustomGradient[]
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter(
+              (g) => g.name && typeof g.saturation === "number" && Array.isArray(g.colors) && g.colors.length === 5,
+            )
+            setStore("savedGradients", valid)
+          }
+        } catch {}
       }
       const currentTheme = store.themes[store.themeId]
       if (currentTheme) {
@@ -165,6 +201,47 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       localStorage.setItem(STORAGE_KEYS.GRADIENT_COLOR, color)
     }
 
+    const setCustomGradient = (gradient: CustomGradient) => {
+      setStore("customGradient", gradient)
+      setStore("previewCustomGradient", null)
+      localStorage.setItem(STORAGE_KEYS.CUSTOM_GRADIENT, JSON.stringify(gradient))
+    }
+
+    const clearCustomGradient = () => {
+      setStore("customGradient", null)
+      setStore("previewCustomGradient", null)
+      localStorage.removeItem(STORAGE_KEYS.CUSTOM_GRADIENT)
+    }
+
+    const saveGradient = (gradient: CustomGradient) => {
+      const existing = store.savedGradients.findIndex((g) => g.name === gradient.name)
+      if (existing >= 0) {
+        setStore("savedGradients", existing, gradient)
+      } else {
+        setStore("savedGradients", [...store.savedGradients, gradient])
+      }
+      localStorage.setItem(STORAGE_KEYS.SAVED_GRADIENTS, JSON.stringify(store.savedGradients))
+      // Also set as active
+      setCustomGradient(gradient)
+    }
+
+    const deleteGradient = (name: string) => {
+      const filtered = store.savedGradients.filter((g) => g.name !== name)
+      setStore("savedGradients", filtered)
+      localStorage.setItem(STORAGE_KEYS.SAVED_GRADIENTS, JSON.stringify(filtered))
+      // If deleting the active gradient, clear it
+      if (store.customGradient?.name === name) {
+        clearCustomGradient()
+      }
+    }
+
+    const selectGradient = (name: string) => {
+      const gradient = store.savedGradients.find((g) => g.name === name)
+      if (gradient) {
+        setCustomGradient(gradient)
+      }
+    }
+
     return {
       themeId: () => store.themeId,
       colorScheme: () => store.colorScheme,
@@ -173,12 +250,23 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       gradientColor: () => store.gradientColor,
       activeGradientMode: () => store.previewGradientMode ?? store.gradientMode,
       activeGradientColor: () => store.previewGradientColor ?? store.gradientColor,
+      customGradient: () => store.customGradient,
+      savedGradients: () => store.savedGradients,
+      activeCustomGradient: () => store.previewCustomGradient ?? store.customGradient,
+      isCustomGradientPreviewing: () => store.previewCustomGradient !== null,
       previewThemeId: () => store.previewThemeId,
       themes: () => store.themes,
       setTheme,
       setColorScheme,
       setGradientMode,
       setGradientColor,
+      setCustomGradient,
+      clearCustomGradient,
+      saveGradient,
+      deleteGradient,
+      selectGradient,
+      previewCustomGradient: (gradient: CustomGradient | null) => setStore("previewCustomGradient", gradient),
+      cancelCustomGradientPreview: () => setStore("previewCustomGradient", null),
       registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
       previewTheme: (id: string) => {
         const theme = store.themes[id]
@@ -221,10 +309,14 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         if (store.previewGradientColor) {
           setGradientColor(store.previewGradientColor)
         }
+        if (store.previewCustomGradient) {
+          setCustomGradient(store.previewCustomGradient)
+        }
         setStore("previewThemeId", null)
         setStore("previewScheme", null)
         setStore("previewGradientMode", null)
         setStore("previewGradientColor", null)
+        setStore("previewCustomGradient", null)
       },
       cancelPreview: () => {
         const theme = store.themes[store.themeId]
@@ -235,6 +327,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         setStore("previewScheme", null)
         setStore("previewGradientMode", null)
         setStore("previewGradientColor", null)
+        setStore("previewCustomGradient", null)
       },
     }
   },

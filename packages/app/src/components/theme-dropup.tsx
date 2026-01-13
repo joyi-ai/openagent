@@ -1,9 +1,11 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useTheme } from "@opencode-ai/ui/theme"
-import type { GradientMode, GradientColor, ColorScheme } from "@opencode-ai/ui/theme/context"
+import type { GradientMode, GradientColor, ColorScheme, CustomGradient } from "@opencode-ai/ui/theme/context"
+import { AdvancedThemePanel } from "./advanced-theme-panel"
 
 const COLOR_SCHEMES: { id: ColorScheme; label: string }[] = [
   { id: "light", label: "Light" },
@@ -24,6 +26,8 @@ const GRADIENT_COLORS: { id: GradientColor; label: string }[] = [
 export function ThemeDropup() {
   const theme = useTheme()
   const [open, setOpen] = createSignal(false)
+  const [advancedOpen, setAdvancedOpen] = createSignal(false)
+  const [editGradient, setEditGradient] = createSignal<CustomGradient | null>(null)
 
   const items = createMemo(() =>
     Object.entries(theme.themes())
@@ -35,21 +39,22 @@ export function ThemeDropup() {
   )
 
   return (
-    <Popover
-      placement="top-end"
-      open={open()}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) theme.cancelPreview()
-      }}
-      trigger={
-        <Button size="normal" variant="ghost" class="px-3 text-12-regular text-text-weak">
-          theme
-          <Icon name="chevron-down" size="small" class="rotate-180" />
-        </Button>
-      }
-      class="w-64"
-    >
+    <>
+      <Popover
+        placement="top-end"
+        open={open()}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next) theme.cancelPreview()
+        }}
+        trigger={
+          <Button size="normal" variant="ghost" class="px-3 text-12-regular text-text-weak">
+            theme
+            <Icon name="chevron-down" size="small" class="rotate-180" />
+          </Button>
+        }
+        class="w-64"
+      >
       <div class="flex flex-col gap-1" onMouseLeave={() => theme.cancelPreview()}>
         <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border-weak-base">
           <div class="text-11-medium text-text-weak px-2 py-1">Appearance</div>
@@ -126,6 +131,64 @@ export function ThemeDropup() {
               }}
             </For>
           </div>
+          <Show when={theme.savedGradients().length > 0}>
+            <div class="text-11-medium text-text-weak px-2 py-1 mt-1">Custom</div>
+            <div class="flex flex-col gap-0.5">
+              <For each={theme.savedGradients()}>
+                {(gradient) => {
+                  const isActive = () => theme.customGradient()?.name === gradient.name
+                  return (
+                    <div class="group flex items-center gap-1">
+                      <Button
+                        size="small"
+                        variant={isActive() ? "secondary" : "ghost"}
+                        class="flex-1 justify-between px-2"
+                        onClick={() => {
+                          theme.selectGradient(gradient.name)
+                          setOpen(false)
+                        }}
+                      >
+                        <span class="truncate">{gradient.name}</span>
+                        <Show when={isActive()}>
+                          <Icon name="check-small" size="small" class="text-text-accent-base" />
+                        </Show>
+                      </Button>
+                      <div class="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                        <IconButton
+                          icon="pencil-line"
+                          size="normal"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditGradient(gradient)
+                            setOpen(false)
+                            setAdvancedOpen(true)
+                          }}
+                        />
+                        <IconButton
+                          icon="close"
+                          size="normal"
+                          variant="ghost"
+                          onClick={() => theme.deleteGradient(gradient.name)}
+                        />
+                      </div>
+                    </div>
+                  )
+                }}
+              </For>
+            </div>
+          </Show>
+          <Button
+            size="small"
+            variant="ghost"
+            class="justify-center px-2 mt-1"
+            onClick={() => {
+              setEditGradient(null)
+              setOpen(false)
+              setAdvancedOpen(true)
+            }}
+          >
+            + New Custom
+          </Button>
         </div>
         <div
           class="flex flex-col gap-1"
@@ -162,6 +225,8 @@ export function ThemeDropup() {
           </For>
         </div>
       </div>
-    </Popover>
+      </Popover>
+      <AdvancedThemePanel open={advancedOpen()} onOpenChange={setAdvancedOpen} editGradient={editGradient()} />
+    </>
   )
 }

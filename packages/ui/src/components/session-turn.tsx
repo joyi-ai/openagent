@@ -507,7 +507,13 @@ export function SessionTurn(
     return s
   })
   const hasDiffs = createMemo(() => message()?.summary?.diffs?.length)
-  const hideResponsePart = createMemo(() => !working() && !!responsePartId())
+  const responseComplete = createMemo(() => !!lastAssistantMessage()?.time.completed)
+  const showResponse = createMemo(() => {
+    if (!response() && !hasDiffs()) return false
+    if (!working()) return true
+    return responseComplete()
+  })
+  const hideResponsePart = createMemo(() => showResponse() && !!responsePartId())
 
   function duration() {
     const msg = message()
@@ -735,7 +741,7 @@ export function SessionTurn(
                       </div>
                     </Show>
                     {/* Response */}
-                    <Show when={!working() && (response() || hasDiffs())}>
+                    <Show when={showResponse()}>
                       <div
                         data-slot="session-turn-summary-section"
                         data-component="message-wrapper"

@@ -229,21 +229,29 @@ function MultiPaneContent() {
 
   const isCrisp = () => theme.activeGradientMode() === "crisp"
   const backdropStyle = (): JSX.CSSProperties => {
-    const blur = isCrisp() ? "blur(4px)" : "blur(24px) saturate(1.05)"
+    const custom = theme.activeCustomGradient()
+    const baseBlur = isCrisp() ? 4 : 24
+    const blurAmount = custom ? baseBlur * (custom.blur / 100) : baseBlur
+    const blur = isCrisp() ? `blur(${blurAmount}px)` : `blur(${blurAmount}px) saturate(1.05)`
     return {
       "background-color": overlayBackground,
       "backdrop-filter": blur,
       "-webkit-backdrop-filter": blur,
     }
   }
-  const grainStyle = (): JSX.CSSProperties => ({
-    "background-image": `url("${GRAIN_DATA_URI}")`,
-    "background-repeat": "repeat",
-    "background-size": "120px 120px",
-    "mix-blend-mode": "soft-light",
-    filter: "contrast(180%)",
-    opacity: isCrisp() ? "0.65" : "0.24",
-  })
+  const grainStyle = (): JSX.CSSProperties => {
+    const custom = theme.activeCustomGradient()
+    const baseOpacity = isCrisp() ? 0.65 : 0.24
+    const noiseOpacity = custom ? baseOpacity * (custom.noise / 100) : baseOpacity
+    return {
+      "background-image": `url("${GRAIN_DATA_URI}")`,
+      "background-repeat": "repeat",
+      "background-size": "120px 120px",
+      "mix-blend-mode": "soft-light",
+      filter: "contrast(180%)",
+      opacity: String(noiseOpacity),
+    }
+  }
 
   const visiblePanes = createMemo(() => multiPane.visiblePanes())
   const hasPanes = createMemo(() => multiPane.panes().length > 0)
