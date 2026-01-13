@@ -37,7 +37,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { showToast } from "@opencode-ai/ui/toast"
+import { showToast, toaster } from "@opencode-ai/ui/toast"
 import { MegaSelector } from "@/components/mega-selector"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
@@ -47,6 +47,7 @@ import { usePlatform } from "@/context/platform"
 import { VoiceButton } from "@/components/voice-button"
 import { FloatingMegaSelector } from "@/components/floating-mega-selector"
 import { SettingsDialog } from "@/components/settings-dialog"
+import { DialogSelectModel } from "@/components/dialog-select-model"
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, "application/pdf"]
@@ -243,6 +244,111 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let fileInputRef!: HTMLInputElement
   let scrollRef!: HTMLDivElement
   let slashPopoverRef!: HTMLDivElement
+  let abortingRef = false
+  const [notifierId, setNotifierId] = createSignal<number | undefined>(undefined)
+
+  const notify = (label: string) => {
+    const prev = notifierId()
+    if (prev !== undefined) {
+      toaster.dismiss(prev)
+    }
+    const next = showToast({
+      variant: "notifier",
+      title: label,
+    })
+    setNotifierId(next)
+  }
+
+  command.register(() => [
+    {
+      id: "model.choose",
+      title: "Choose model",
+      description: "Select a different model",
+      category: "Model",
+      keybind: "mod+'",
+      slash: "model",
+      onSelect: () => dialog.show(() => <DialogSelectModel />),
+    },
+    {
+      id: "model.cycle",
+      title: "Cycle model",
+      description: "Switch to the next recent model",
+      category: "Model",
+      keybind: "f2",
+      onSelect: () => {
+        local.model.cycle(1)
+        notify(local.model.current()?.name ?? "Model")
+      },
+    },
+    {
+      id: "model.cycle.reverse",
+      title: "Cycle model backwards",
+      description: "Switch to the previous recent model",
+      category: "Model",
+      keybind: "shift+f2",
+      onSelect: () => {
+        local.model.cycle(-1)
+        notify(local.model.current()?.name ?? "Model")
+      },
+    },
+    {
+      id: "agent.cycle",
+      title: "Cycle agent",
+      description: "Switch to the next agent",
+      category: "Agent",
+      keybind: "tab,mod+.",
+      slash: "agent",
+      onSelect: () => {
+        local.agent.move(1)
+        notify(local.agent.current()?.name ?? "Agent")
+      },
+    },
+    {
+      id: "agent.cycle.reverse",
+      title: "Cycle agent backwards",
+      description: "Switch to the previous agent",
+      category: "Agent",
+      keybind: "shift+mod+.",
+      onSelect: () => {
+        local.agent.move(-1)
+        notify(local.agent.current()?.name ?? "Agent")
+      },
+    },
+    {
+      id: "mode.cycle",
+      title: "Cycle mode",
+      description: "Switch to the next mode",
+      category: "Mode",
+      keybind: "shift+tab",
+      slash: "mode",
+      onSelect: () => {
+        local.mode.move(1)
+        notify(local.mode.current()?.name ?? "Default")
+      },
+    },
+    {
+      id: "model.variant.cycle",
+      title: "Cycle thinking effort",
+      description: "Switch to the next effort level",
+      category: "Model",
+      keybind: "shift+mod+t",
+      onSelect: () => {
+        local.model.variant.cycle()
+        notify(local.model.variant.current() ?? "Default")
+      },
+    },
+    {
+      id: "model.thinking.toggle",
+      title: "Toggle thinking",
+      description: "Toggle extended thinking",
+      category: "Model",
+      keybind: "mod+shift+e",
+      onSelect: () => {
+        local.model.thinking.toggle()
+        notify(local.model.thinking.current() ? "Thinking On" : "Thinking Off")
+      },
+    },
+  ])
 
   const scrollCursorIntoView = () => {
     const container = scrollRef
@@ -274,8 +380,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     requestAnimationFrame(scrollCursorIntoView)
   }
 
-  const effectiveSessionId = createMemo(() => props.sessionId ?? params.id)
-  const sessionKey = createMemo(() => `${params.dir}${effectiveSessionId() ? "/" + effectiveSessionId() : ""}`)
+  const isPaneScoped = createMemo(() => props.paneId !== undefined)
+  const effectiveSessionId = createMemo(() => {
+    if (isPaneScoped()) return props.sessionId
+    return props.sessionId ?? params.id
+  })
+  const sessionKey = createMemo(() => {
+    const sessionId = effectiveSessionId()
+    if (isPaneScoped()) {
+      return `multi-${props.paneId}-${sdk.directory}${sessionId ? "/" + sessionId : ""}`
+    }
+    return `${params.dir}${sessionId ? "/" + sessionId : ""}`
+  })
   const tabs = createMemo(() => layout.tabs(sessionKey()))
   const view = createMemo(() => layout.view(sessionKey()))
   const activeFile = createMemo(() => {
@@ -1226,6 +1342,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const abort = () => {
     const sessionID = effectiveSessionId()
     if (!sessionID) return
+    abortingRef = true
     sdk.client.session
       .abort({
         sessionID,
@@ -1865,6 +1982,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           sync.session.mergeMessage({ info: data.info, parts: data.parts ?? [] })
         })
         .catch((e) => {
+          if (abortingRef) {
+            abortingRef = false
+            return
+          }
           console.error("Failed to send prompt", e)
           showToast({
             variant: "error",
@@ -1874,6 +1995,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         })
     } finally {
       setSubmitting(false)
+      abortingRef = false
     }
   }
 

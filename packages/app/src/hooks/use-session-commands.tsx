@@ -2,7 +2,6 @@ import { createMemo, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useCommand } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useLocal } from "@/context/local"
 import { useLayout } from "@/context/layout"
 import { useTerminal } from "@/context/terminal"
 import { useSDK } from "@/context/sdk"
@@ -10,7 +9,6 @@ import { useSync } from "@/context/sync"
 import { usePrompt } from "@/context/prompt"
 import { usePermission } from "@/context/permission"
 import { DialogSelectFile } from "@/components/dialog-select-file"
-import { DialogSelectModel } from "@/components/dialog-select-model"
 import { DialogSelectMcp } from "@/components/dialog-select-mcp"
 import { showToast } from "@opencode-ai/ui/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
@@ -32,7 +30,6 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
   const navigate = useNavigate()
   const command = useCommand()
   const dialog = useDialog()
-  const local = useLocal()
   const layout = useLayout()
   const terminal = useTerminal()
   const sdk = useSDK()
@@ -42,13 +39,6 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
   const view = createMemo(() => layout.view(options.sessionKey()))
 
   const enabled = () => options.isEnabled?.() ?? true
-  const notify = (label: string) => {
-    showToast({
-      variant: "notifier",
-      title: label,
-    })
-  }
-
   command.register(() => [
     {
       id: "session.new",
@@ -127,42 +117,6 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       onSelect: () => options.onNavigateMessage(1),
     },
     {
-      id: "model.choose",
-      title: "Choose model",
-      description: "Select a different model",
-      category: "Model",
-      keybind: "mod+'",
-      slash: "model",
-      disabled: !enabled(),
-      onSelect: () => {
-        dialog.show(() => <DialogSelectModel />)
-      },
-    },
-    {
-      id: "model.cycle",
-      title: "Cycle model",
-      description: "Switch to the next recent model",
-      category: "Model",
-      keybind: "f2",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.model.cycle(1)
-        notify(local.model.current()?.name ?? "Model")
-      },
-    },
-    {
-      id: "model.cycle.reverse",
-      title: "Cycle model backwards",
-      description: "Switch to the previous recent model",
-      category: "Model",
-      keybind: "shift+f2",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.model.cycle(-1)
-        notify(local.model.current()?.name ?? "Model")
-      },
-    },
-    {
       id: "mcp.toggle",
       title: "Toggle MCPs",
       description: "Toggle MCPs",
@@ -171,68 +125,6 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       slash: "mcp",
       disabled: !enabled(),
       onSelect: () => dialog.show(() => <DialogSelectMcp />),
-    },
-    {
-      id: "agent.cycle",
-      title: "Cycle agent",
-      description: "Switch to the next agent",
-      category: "Agent",
-      keybind: "tab,mod+.",
-      slash: "agent",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.agent.move(1)
-        notify(local.agent.current()?.name ?? "Agent")
-      },
-    },
-    {
-      id: "agent.cycle.reverse",
-      title: "Cycle agent backwards",
-      description: "Switch to the previous agent",
-      category: "Agent",
-      keybind: "shift+mod+.",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.agent.move(-1)
-        notify(local.agent.current()?.name ?? "Agent")
-      },
-    },
-    {
-      id: "mode.cycle",
-      title: "Cycle mode",
-      description: "Switch to the next mode",
-      category: "Mode",
-      keybind: "shift+tab",
-      slash: "mode",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.mode.move(1)
-        notify(local.mode.current()?.name ?? "Default")
-      },
-    },
-    {
-      id: "model.variant.cycle",
-      title: "Cycle thinking effort",
-      description: "Switch to the next effort level",
-      category: "Model",
-      keybind: "shift+mod+t",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.model.variant.cycle()
-        notify(local.model.variant.current() ?? "Default")
-      },
-    },
-    {
-      id: "model.thinking.toggle",
-      title: "Toggle thinking",
-      description: "Toggle extended thinking",
-      category: "Model",
-      keybind: "mod+shift+e",
-      disabled: !enabled(),
-      onSelect: () => {
-        local.model.thinking.toggle()
-        notify(local.model.thinking.current() ? "Thinking On" : "Thinking Off")
-      },
     },
     {
       id: "permissions.autoaccept",

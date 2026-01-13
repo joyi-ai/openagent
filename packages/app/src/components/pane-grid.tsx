@@ -42,7 +42,7 @@ export function PaneGrid(props: PaneGridProps) {
       const focusedPane = multiPane.focusedPane()
       switch (action) {
         case "new":
-          multiPane.addPane(focusedPane?.directory)
+          multiPane.addPaneFromFocused()
           break
         case "close":
           if (focusedId) multiPane.removePane(focusedId)

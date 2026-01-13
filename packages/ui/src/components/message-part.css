@@ -454,7 +454,7 @@
     border-radius: 6px;
     border: none;
     box-shadow: var(--shadow-xs-border-base);
-    background-color: var(--surface-raised-base);
+    background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
     overflow: visible;
 
     &::before {
@@ -521,7 +521,7 @@
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
-  background-color: var(--surface-raised-strong);
+  background-color: color-mix(in srgb, var(--surface-inset-base) 25%, transparent);
   border-radius: 0 0 6px 6px;
 
   [data-slot="permission-actions"] {

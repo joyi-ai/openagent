@@ -178,10 +178,6 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
     delete cache.prompt
   }
 
-  createEffect(() => {
-    paneSnapshots.set(props.paneId, snapshotPaneState())
-  })
-
   createEffect(
     on(
       () => props.paneId,
@@ -211,6 +207,15 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       },
     ),
   )
+
+  createEffect(() => {
+    if (restoring()) return
+    const paneId = props.paneId
+    if (!paneId) return
+    const snapshot = snapshotPaneState()
+    paneSnapshots.set(paneId, snapshot)
+    storePaneState(paneId, snapshot)
+  })
 
   createEffect(() => {
     const key = activeKey()
@@ -292,7 +297,7 @@ export function MultiPanePromptPanel(props: { paneId: string; sessionId?: string
       </Show>
 
       <div class="px-3 pt-2 flex justify-center">
-        <div class="w-full max-w-[680px]">
+        <div class="w-full max-w-[800px]">
           <PromptInput
             ref={(el) => (editorRef = el)}
             paneId={props.paneId}

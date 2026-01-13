@@ -4,9 +4,9 @@
     flex-direction: column;
     gap: 0.75rem;
     padding: 0.75rem;
-    border-radius: var(--radius-sm);
-    background: var(--surface-raised-base);
-    border: 1px solid var(--border-base);
+    border-radius: var(--radius-md);
+    background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
+    border: 1px solid var(--border-strong-base);
   }
 
   [data-component="plan-review"][data-completed] {

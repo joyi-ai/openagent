@@ -19,7 +19,7 @@ export function PaneToolbar() {
     const focusedPane = multiPane.focusedPane()
     // Use focused pane's directory, or fall back to most recent project
     const directory = focusedPane?.directory ?? layout.projects.list()[0]?.worktree
-    const id = multiPane.addPane(directory)
+    const id = multiPane.addPaneFromFocused(directory)
     if (!id) {
       showToast({
         title: "Tab limit reached",

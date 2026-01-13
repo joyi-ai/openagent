@@ -47,6 +47,7 @@ import { showToast, Toast, toaster } from "@opencode-ai/ui/toast"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
+import { useMultiPane } from "@/context/multi-pane"
 import { Binary } from "@opencode-ai/util/binary"
 import { retry } from "@opencode-ai/util/retry"
 import { SDKProvider } from "@/context/sdk"
@@ -93,6 +94,7 @@ export default function Layout(props: ParentProps) {
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const layout = useLayout()
+  const multiPane = useMultiPane()
   const platform = usePlatform()
   const server = useServer()
   const notification = useNotification()
@@ -848,6 +850,14 @@ export default function Layout(props: ParentProps) {
     layout.mobileSidebar.hide()
   }
 
+  function selectProjectInFocusedPane(directory: string) {
+    const focused = multiPane.focusedPane()
+    if (!focused) return
+    if (focused.directory === directory && !focused.sessionId) return
+    multiPane.updatePane(focused.id, { directory, sessionId: undefined })
+    multiPane.setFocused(focused.id)
+  }
+
   function navigateToSession(session: Session | undefined) {
     if (!session) return
     const sessionDir = session.directory ?? (params.dir ? base64Decode(params.dir) : undefined)
@@ -1030,7 +1040,7 @@ export default function Layout(props: ParentProps) {
             size="large"
             class="flex items-center justify-center p-0 aspect-square border-none rounded-lg"
             data-selected={props.project.worktree === current()}
-            onClick={() => navigateToProject(props.project.worktree)}
+            onClick={() => selectProjectInFocusedPane(props.project.worktree)}
           >
             <ProjectAvatar project={props.project} notify />
           </Button>
@@ -1248,7 +1258,10 @@ export default function Layout(props: ParentProps) {
                   "bg-surface-raised-base-hover": isActive() && !isExpanded(),
                 }}
               >
-                <Collapsible.Trigger class="group/trigger flex items-center gap-3 p-0 text-left min-w-0 grow border-none">
+                <Collapsible.Trigger
+                  class="group/trigger flex items-center gap-3 p-0 text-left min-w-0 grow border-none"
+                  onClick={() => selectProjectInFocusedPane(props.project.worktree)}
+                >
                   <ProjectAvatar
                     project={props.project}
                     class="group-hover/session:hidden"
@@ -1498,14 +1511,16 @@ export default function Layout(props: ParentProps) {
             keybind={command.keybind("sidebar.toggle")}
           >
             <button
-              class="absolute top-1/2 -translate-y-1/2 right-0 translate-x-1/2 z-50 h-12 w-5 flex items-center justify-center rounded-md bg-surface-raised-base border border-border-base shadow-sm hover:bg-surface-raised-base-hover transition-colors cursor-pointer"
+              class="absolute top-1/2 -translate-y-1/2 right-0 translate-x-1/2 z-50 h-16 w-10 flex items-center justify-center cursor-pointer group/sidebar-handle"
               onClick={layout.sidebar.toggle}
             >
-              <Icon
-                name="chevron-right"
-                size="small"
-                class={layout.sidebar.opened() ? "text-icon-base rotate-180" : "text-icon-base"}
-              />
+              <div class="h-12 w-5 flex items-center justify-center rounded-md bg-surface-raised-base border border-border-base shadow-sm group-hover/sidebar-handle:bg-surface-raised-base-hover transition-colors">
+                <Icon
+                  name="chevron-right"
+                  size="small"
+                  class={layout.sidebar.opened() ? "text-icon-base rotate-180" : "text-icon-base"}
+                />
+              </div>
             </button>
           </TooltipKeybind>
           <Show when={layout.sidebar.opened()}>

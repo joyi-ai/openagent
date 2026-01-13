@@ -1,6 +1,6 @@
 import { Show, createMemo, onMount, createEffect, on, createSignal, type JSX } from "solid-js"
 import { useSearchParams } from "@solidjs/router"
-import { useMultiPane, MultiPaneProvider } from "@/context/multi-pane"
+import { useMultiPane } from "@/context/multi-pane"
 import { PaneGrid } from "@/components/pane-grid"
 import { SessionPane } from "@/components/session-pane"
 import { ReviewPanel } from "@/components/session-pane/review-panel"
@@ -298,7 +298,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
   const handleKeybindAddPane = () => {
     const focused = multiPane.focusedPane()
     const directory = focused?.directory ?? getLastProject()
-    const id = multiPane.addPane(directory)
+    const id = multiPane.addPaneFromFocused(directory)
     if (id) return
     showToast({
       title: "Tab limit reached",
@@ -412,7 +412,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
         // Add pane with session (if any) and a new tab with same/last project
         multiPane.addPane(initialDir, initialSession)
         if (wantsNewTab) {
-          multiPane.addPane(initialDir)
+          multiPane.addPaneFromFocused(initialDir)
         }
         if (shouldClearParams) {
           setSearchParams({ dir: undefined, session: undefined, newTab: undefined })
@@ -422,7 +422,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
       const lastProject = getLastProject()
       if (wantsNewTab) {
         multiPane.addPane(lastProject)
-        multiPane.addPane(lastProject)
+        multiPane.addPaneFromFocused(lastProject)
         setSearchParams({ newTab: undefined })
         return
       }
@@ -436,7 +436,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
     // Already have panes, but coming from session "New Tab" button
     layout.projects.open(initialDir)
     multiPane.addPane(initialDir, initialSession)
-    multiPane.addPane(initialDir)
+    multiPane.addPaneFromFocused(initialDir)
     if (shouldClearParams) {
       setSearchParams({ dir: undefined, session: undefined, newTab: undefined })
     }
@@ -599,9 +599,5 @@ function MultiPaneContent(props: MultiPanePageProps) {
 }
 
 export default function MultiPanePage(props: MultiPanePageProps) {
-  return (
-    <MultiPaneProvider>
-      <MultiPaneContent initialDir={props.initialDir} initialSession={props.initialSession} />
-    </MultiPaneProvider>
-  )
+  return <MultiPaneContent initialDir={props.initialDir} initialSession={props.initialSession} />
 }

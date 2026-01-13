@@ -3,6 +3,7 @@ import { batch, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { triggerShiftingGradient } from "@/components/shifting-gradient"
+import { paneCache } from "@/components/multi-pane/pane-cache"
 import { useGlobalSDK } from "@/context/global-sdk"
 
 export type PaneConfig = {
@@ -75,6 +76,65 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       return store.panes.find((p) => p.id === store.focusedPaneId)
     })
 
+    function copyPaneSetup(sourceId: string | undefined, targetId: string | undefined) {
+      if (!sourceId) return
+      if (!targetId) return
+      const cached = paneCache.get(sourceId)
+      if (!cached) return
+      paneCache.set(targetId, {
+        agent: cached.agent,
+        model: cached.model,
+        variant: cached.variant,
+        modeId: cached.modeId,
+        thinking: cached.thinking,
+      })
+    }
+
+    function addPane(directory?: string, sessionId?: string, options?: { focus?: boolean }) {
+      if (store.panes.length >= MAX_TOTAL_PANES) {
+        return undefined
+      }
+      const id = generatePaneId()
+      const pane: PaneConfig = { id, directory, sessionId }
+
+      const total = store.panes.length
+      const targetPage = Math.floor(total / MAX_PANES_PER_PAGE)
+      const pageStart = targetPage * MAX_PANES_PER_PAGE
+      const visibleCount = total - pageStart
+      const prevLayout = calculateLayout(visibleCount)
+      const nextLayout = calculateLayout(visibleCount + 1)
+      const shouldInsertIntoExpansionSlot =
+        visibleCount > 0 && nextLayout.rows === prevLayout.rows && nextLayout.columns > prevLayout.columns
+      const localInsertIndex = shouldInsertIntoExpansionSlot
+        ? Math.min(prevLayout.columns, visibleCount)
+        : visibleCount
+
+      const nextPanes = [...store.panes]
+      nextPanes.splice(pageStart + localInsertIndex, 0, pane)
+      setStore("panes", nextPanes)
+      // Reset maximized state when adding a new pane
+      setStore("maximizedPaneId", undefined)
+      const shouldFocus = options?.focus ?? true
+      if (shouldFocus) {
+        setStore("focusedPaneId", id)
+      }
+      // Use length-1 because pages are 0-indexed (12 panes with perPage=12 should be page 0)
+      const newPage = Math.floor((store.panes.length - 1) / MAX_PANES_PER_PAGE)
+      if (newPage !== store.currentPage) {
+        setStore("currentPage", newPage)
+      }
+      triggerShiftingGradient()
+      return id
+    }
+
+    function addPaneFromFocused(directoryFallback?: string, options?: { focus?: boolean }) {
+      const focused = focusedPane()
+      const directory = focused ? focused.directory : directoryFallback
+      const id = addPane(directory, undefined, options)
+      copyPaneSetup(focused?.id, id)
+      return id
+    }
+
     return {
       panes: createMemo(() => store.panes),
       visiblePanes,
@@ -122,42 +182,8 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         },
       },
 
-      addPane(directory?: string, sessionId?: string, options?: { focus?: boolean }) {
-        if (store.panes.length >= MAX_TOTAL_PANES) {
-          return undefined
-        }
-        const id = generatePaneId()
-        const pane: PaneConfig = { id, directory, sessionId }
-
-        const total = store.panes.length
-        const targetPage = Math.floor(total / MAX_PANES_PER_PAGE)
-        const pageStart = targetPage * MAX_PANES_PER_PAGE
-        const visibleCount = total - pageStart
-        const prevLayout = calculateLayout(visibleCount)
-        const nextLayout = calculateLayout(visibleCount + 1)
-        const shouldInsertIntoExpansionSlot =
-          visibleCount > 0 && nextLayout.rows === prevLayout.rows && nextLayout.columns > prevLayout.columns
-        const localInsertIndex = shouldInsertIntoExpansionSlot
-          ? Math.min(prevLayout.columns, visibleCount)
-          : visibleCount
-
-        const nextPanes = [...store.panes]
-        nextPanes.splice(pageStart + localInsertIndex, 0, pane)
-        setStore("panes", nextPanes)
-        // Reset maximized state when adding a new pane
-        setStore("maximizedPaneId", undefined)
-        const shouldFocus = options?.focus ?? true
-        if (shouldFocus) {
-          setStore("focusedPaneId", id)
-        }
-        // Use length-1 because pages are 0-indexed (12 panes with perPage=12 should be page 0)
-        const newPage = Math.floor((store.panes.length - 1) / MAX_PANES_PER_PAGE)
-        if (newPage !== store.currentPage) {
-          setStore("currentPage", newPage)
-        }
-        triggerShiftingGradient()
-        return id
-      },
+      addPane,
+      addPaneFromFocused,
 
       removePane(id: string) {
         const index = store.panes.findIndex((p) => p.id === id)
