@@ -549,6 +549,7 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                     const [formStore, setFormStore] = createStore({
                       value: "",
                       error: undefined as string | undefined,
+                      submitting: false,
                     })
 
                     onMount(() => {
@@ -556,6 +557,30 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                         platform.openLink(store.authorization.url)
                       }
                     })
+
+                    function extractErrorMessage(error: unknown): string {
+                      if (!error || typeof error !== "object") return "Invalid authorization code"
+                      const err = error as Record<string, unknown>
+                      // Handle NamedError format: { name: string, data: object }
+                      if (typeof err.name === "string") {
+                        if (err.name === "ProviderAuthOauthMissing") {
+                          return "Authorization session expired. Please start the login process again."
+                        }
+                        if (err.name === "ProviderAuthOauthCodeMissing") {
+                          return "Authorization code is required"
+                        }
+                        if (err.name === "ProviderAuthOauthCallbackFailed") {
+                          return "Authorization failed. Please check the code and try again."
+                        }
+                        return err.name.replace(/([A-Z])/g, " $1").trim()
+                      }
+                      // Handle { errors: [...] } format
+                      if (Array.isArray(err.errors) && err.errors.length > 0) {
+                        const firstError = err.errors[0] as Record<string, unknown>
+                        return (firstError?.message as string) || (firstError?.name as string) || "Invalid authorization code"
+                      }
+                      return "Invalid authorization code"
+                    }
 
                     async function handleSubmit(e: SubmitEvent) {
                       e.preventDefault()
@@ -570,16 +595,31 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                       }
 
                       setFormStore("error", undefined)
-                      const { error } = await globalSDK.client.provider.oauth.callback({
-                        providerID: props.provider,
-                        method: store.methodIndex,
-                        code,
-                      })
-                      if (!error) {
-                        await complete()
-                        return
+                      setFormStore("submitting", true)
+                      try {
+                        const result = await globalSDK.client.provider.oauth.callback({
+                          providerID: props.provider,
+                          method: store.methodIndex,
+                          code,
+                        })
+                        if (!result.error) {
+                          await complete()
+                          return
+                        }
+                        setFormStore("error", extractErrorMessage(result.error))
+                      } catch (err) {
+                        console.error("OAuth callback error:", err)
+                        // Handle both Error objects and thrown response bodies
+                        if (err instanceof Error) {
+                          setFormStore("error", err.message)
+                        } else if (typeof err === "object" && err !== null) {
+                          setFormStore("error", extractErrorMessage(err))
+                        } else {
+                          setFormStore("error", "Failed to connect. Please try again.")
+                        }
+                      } finally {
+                        setFormStore("submitting", false)
                       }
-                      setFormStore("error", "Invalid authorization code")
                     }
 
                     return (
@@ -602,9 +642,13 @@ export function DialogConnectProvider(props: { provider: string; onBack?: () => 
                             onChange={setFormStore.bind(null, "value")}
                             validationState={formStore.error ? "invalid" : undefined}
                             error={formStore.error}
+                            disabled={formStore.submitting}
                           />
-                          <Button class="w-auto" type="submit" size="large" variant="primary">
-                            Submit
+                          <Button class="w-auto" type="submit" size="large" variant="primary" disabled={formStore.submitting}>
+                            <Show when={formStore.submitting} fallback="Submit">
+                              <Spinner />
+                              <span>Connecting...</span>
+                            </Show>
                           </Button>
                         </form>
                       </div>

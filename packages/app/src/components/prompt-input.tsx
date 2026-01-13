@@ -588,6 +588,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         .commands()
         .then((response) => response.data ?? [])
         .catch(() => [] as ClaudeCodeSlashCommand[]),
+    { initialValue: [] },
   )
 
   const claudeCommandTriggers = createMemo(() => {
