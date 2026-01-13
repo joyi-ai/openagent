@@ -467,11 +467,21 @@ export const MegaSelector: Component<{ class?: string }> = (props) => {
                   }
                 >
                   <For each={modelGroups()}>
-                    {(group) => {
+                    {(group, index) => {
                       const showProvider = group.kind !== "provider"
+                      const isAlternate = () => index() % 2 === 1
                       return (
-                        <div class="flex flex-col">
-                          <div class="sticky top-0 z-10 px-2 py-1 text-11-regular text-text-subtle bg-surface-raised-stronger-non-alpha">
+                        <div
+                          class="flex flex-col"
+                          classList={{ "bg-surface-raised-base/50": isAlternate() }}
+                        >
+                          <div
+                            class="sticky top-0 z-10 px-2 py-1 text-11-regular text-text-subtle"
+                            classList={{
+                              "bg-surface-raised-base/50": isAlternate(),
+                              "bg-surface-raised-stronger-non-alpha": !isAlternate(),
+                            }}
+                          >
                             {group.title}
                           </div>
                           <For each={group.models}>

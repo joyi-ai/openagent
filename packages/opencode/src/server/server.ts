@@ -970,6 +970,87 @@ export namespace Server {
           },
         )
         .get(
+          "/git/branches",
+          describeRoute({
+            summary: "List git branches",
+            description: "Get a list of all local git branches in the current project.",
+            operationId: "git.branches",
+            responses: {
+              200: {
+                description: "List of branch names",
+                content: {
+                  "application/json": {
+                    schema: resolver(z.object({ data: z.array(z.string()) }).meta({ ref: "GitBranches" })),
+                  },
+                },
+              },
+            },
+          }),
+          async (c) => {
+            const result = await Bun.$`git branch --format=%(refname:short)`.quiet().nothrow().cwd(Instance.worktree).text()
+            const branches = result
+              .split("\n")
+              .map((b) => b.trim())
+              .filter(Boolean)
+            return c.json({ data: branches })
+          },
+        )
+        .get(
+          "/git/commits",
+          describeRoute({
+            summary: "List git commits",
+            description: "Get a list of recent git commits in the current project.",
+            operationId: "git.commits",
+            responses: {
+              200: {
+                description: "List of commits",
+                content: {
+                  "application/json": {
+                    schema: resolver(
+                      z
+                        .object({
+                          data: z.array(
+                            z.object({
+                              hash: z.string(),
+                              message: z.string(),
+                              author: z.string(),
+                            }),
+                          ),
+                        })
+                        .meta({ ref: "GitCommits" }),
+                    ),
+                  },
+                },
+              },
+            },
+          }),
+          validator(
+            "query",
+            z.object({
+              limit: z.coerce.number().optional().default(50).meta({ description: "Maximum number of commits to return" }),
+            }),
+          ),
+          async (c) => {
+            const { limit } = c.req.valid("query")
+            const result = await Bun.$`git log --oneline -n ${limit} --format=%H|%s|%an`
+              .quiet()
+              .nothrow()
+              .cwd(Instance.worktree)
+              .text()
+            const commits = result
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => {
+                const parts = line.split("|")
+                const hash = parts[0] ?? ""
+                const author = parts[parts.length - 1] ?? ""
+                const message = parts.slice(1, -1).join("|")
+                return { hash, message, author }
+              })
+            return c.json({ data: commits })
+          },
+        )
+        .get(
           "/session",
           describeRoute({
             summary: "List sessions",

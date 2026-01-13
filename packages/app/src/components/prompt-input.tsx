@@ -109,11 +109,39 @@ type CodexSlashAction =
   | { kind: "settings" }
   | { kind: "link"; url: string }
 
+// Nested option for hierarchical menus in the slash popup tray
+type NestedOption = {
+  id: string
+  label: string
+  description?: string
+  // If present, selecting shows another nested view
+  nested?: NestedOptionView
+  // If present, this is a terminal option that produces text to submit
+  result?: string
+}
+
+// View types for nested menus
+type NestedOptionView =
+  | { type: "static"; title: string; options: NestedOption[] }
+  | { type: "dynamic"; title: string; loaderId: "branches" | "commits"; searchable?: boolean }
+  | { type: "input"; title: string; placeholder: string }
+
+// State for nested option stack
+type NestedStackItem = {
+  view: NestedOptionView
+  trigger: string
+  options: NestedOption[]
+  filter: string
+  activeIndex: number
+  loading: boolean
+}
+
 type CodexSlashCommand = {
   trigger: string
   title: string
   description: string
   action?: CodexSlashAction
+  nested?: NestedOptionView
   debugOnly?: boolean
 }
 
@@ -128,6 +156,50 @@ const CODEX_SLASH_COMMANDS: CodexSlashCommand[] = [
     trigger: "review",
     title: "Review",
     description: "review my current changes and find issues",
+    nested: {
+      type: "static",
+      title: "Select a review preset",
+      options: [
+        {
+          id: "review-branch",
+          label: "Review against a base branch",
+          description: "Compare current branch to another branch",
+          nested: {
+            type: "dynamic",
+            title: "Select a branch",
+            loaderId: "branches",
+            searchable: true,
+          },
+        },
+        {
+          id: "review-uncommitted",
+          label: "Review uncommitted changes",
+          description: "Review all staged and unstaged changes",
+          result: "/review",
+        },
+        {
+          id: "review-commit",
+          label: "Review a commit",
+          description: "Review changes in a specific commit",
+          nested: {
+            type: "dynamic",
+            title: "Select a commit",
+            loaderId: "commits",
+            searchable: true,
+          },
+        },
+        {
+          id: "review-custom",
+          label: "Custom review instructions",
+          description: "Enter branch, commit, or PR URL",
+          nested: {
+            type: "input",
+            title: "Enter review target",
+            placeholder: "branch name, commit SHA, or PR URL...",
+          },
+        },
+      ],
+    },
   },
   {
     trigger: "new",
@@ -434,6 +506,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     mode: "normal" | "shell"
     applyingHistory: boolean
     killBuffer: string
+    nestedStack: NestedStackItem[]
   }>({
     popover: null,
     historyIndex: -1,
@@ -444,6 +517,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     mode: "normal",
     applyingHistory: false,
     killBuffer: "",
+    nestedStack: [],
   })
 
   const MAX_HISTORY = 100
@@ -640,6 +714,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   createEffect(() => {
     if (!isFocused()) setStore("popover", null)
+  })
+
+  // Clear nested stack when popover closes
+  createEffect(() => {
+    if (!store.popover && store.nestedStack.length > 0) {
+      setStore("nestedStack", [])
+    }
   })
 
   type AtOption = { type: "agent"; name: string; display: string } | { type: "file"; path: string; display: string }
@@ -881,8 +962,123 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return false
   }
 
+  // Helper to get current nested state
+  const currentNestedState = () => {
+    const stack = store.nestedStack
+    return stack.length > 0 ? stack[stack.length - 1] : undefined
+  }
+
+  // Helper to get current nested view
+  const currentNestedView = () => currentNestedState()?.view
+
+  // Load dynamic options based on loaderId
+  const loadDynamicOptions = async (loaderId: "branches" | "commits", trigger: string): Promise<NestedOption[]> => {
+    const baseUrl = sdk.url
+    const headers = { "x-opencode-directory": sdk.directory }
+    const fetchFn = platform.fetch ?? window.fetch
+
+    if (loaderId === "branches") {
+      const response = await fetchFn(`${baseUrl}/git/branches`, { headers })
+      const data = (await response.json()) as { data?: string[] }
+      return (data.data ?? []).map((branch) => ({
+        id: `branch-${branch}`,
+        label: branch,
+        result: `/${trigger} ${branch}`,
+      }))
+    }
+    if (loaderId === "commits") {
+      const response = await fetchFn(`${baseUrl}/git/commits?limit=50`, { headers })
+      const data = (await response.json()) as { data?: Array<{ hash: string; message: string; author: string }> }
+      return (data.data ?? []).map((commit) => ({
+        id: `commit-${commit.hash}`,
+        label: `${commit.hash.slice(0, 7)} ${commit.message}`,
+        description: commit.author,
+        result: `/${trigger} ${commit.hash}`,
+      }))
+    }
+    return []
+  }
+
+  // Push new nested view onto stack
+  const pushNestedView = async (view: NestedOptionView, trigger: string) => {
+    const newState: NestedStackItem = {
+      view,
+      trigger,
+      options: [],
+      filter: "",
+      activeIndex: 0,
+      loading: view.type === "dynamic",
+    }
+
+    setStore("nestedStack", (stack) => [...stack, newState])
+
+    if (view.type === "static") {
+      setStore("nestedStack", store.nestedStack.length - 1, "options", view.options)
+    } else if (view.type === "dynamic") {
+      const options = await loadDynamicOptions(view.loaderId, trigger)
+      setStore("nestedStack", store.nestedStack.length - 1, {
+        options,
+        loading: false,
+      })
+    }
+  }
+
+  // Pop nested view from stack
+  const handleNestedBack = () => {
+    setStore("nestedStack", (stack) => stack.slice(0, -1))
+  }
+
+  // Handle nested option selection
+  const handleNestedSelect = (option: NestedOption) => {
+    const state = currentNestedState()
+    if (!state) return
+
+    if (option.nested) {
+      void pushNestedView(option.nested, state.trigger)
+      return
+    }
+
+    if (option.result) {
+      // Clear popup and submit
+      setStore("nestedStack", [])
+      setStore("popover", null)
+
+      editorRef.textContent = option.result
+      prompt.set([{ type: "text", content: option.result, start: 0, end: option.result.length }], option.result.length)
+
+      // Auto-submit
+      handleSubmit(new Event("submit") as unknown as SubmitEvent)
+    }
+  }
+
+  // Handle text input submission from nested input view
+  const handleNestedInputSubmit = (value: string) => {
+    const state = currentNestedState()
+    if (!state) return
+
+    const result = `/${state.trigger} ${value}`
+
+    setStore("nestedStack", [])
+    setStore("popover", null)
+
+    editorRef.textContent = result
+    prompt.set([{ type: "text", content: result, start: 0, end: result.length }], result.length)
+
+    handleSubmit(new Event("submit") as unknown as SubmitEvent)
+  }
+
   const handleSlashSelect = (cmd: SlashCommand | undefined) => {
     if (!cmd) return
+
+    // Check for nested options
+    if (cmd.type === "codex" || cmd.type === "claude-code") {
+      const codexCmd = CODEX_SLASH_COMMANDS_BY_TRIGGER.get(cmd.trigger)
+      if (codexCmd?.nested) {
+        void pushNestedView(codexCmd.nested, cmd.trigger)
+        return // Stay in popup with nested view
+      }
+    }
+
     setStore("popover", null)
 
     if (cmd.type === "codex" && cmd.action) {
@@ -1458,6 +1654,50 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         event.preventDefault()
         return
       }
+    }
+
+    // Handle nested options navigation
+    if (store.popover === "slash" && store.nestedStack.length > 0) {
+      const state = currentNestedState()
+      if (!state) return
+
+      // Back navigation
+      if (event.key === "Escape" || event.key === "ArrowLeft") {
+        event.preventDefault()
+        handleNestedBack()
+        return
+      }
+
+      // Don't handle keys for input view (let the input handle them)
+      if (state.view.type === "input") return
+
+      // Up/Down navigation
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setStore("nestedStack", store.nestedStack.length - 1, "activeIndex", Math.max(0, state.activeIndex - 1))
+        return
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setStore(
+          "nestedStack",
+          store.nestedStack.length - 1,
+          "activeIndex",
+          Math.min(state.options.length - 1, state.activeIndex + 1),
+        )
+        return
+      }
+
+      // Select option
+      if (event.key === "Enter") {
+        event.preventDefault()
+        const option = state.options[state.activeIndex]
+        if (option) handleNestedSelect(option)
+        return
+      }
+
+      return
     }
 
     if (store.popover && (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter")) {
@@ -2060,49 +2300,121 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Match>
             <Match when={store.popover === "slash"}>
               <Show
-                when={slashFlat().length > 0}
-                fallback={<div class="text-text-weak px-2 py-1">No matching commands</div>}
+                when={store.nestedStack.length > 0}
+                fallback={
+                  <Show
+                    when={slashFlat().length > 0}
+                    fallback={<div class="text-text-weak px-2 py-1">No matching commands</div>}
+                  >
+                    <For each={slashFlat()}>
+                      {(cmd) => (
+                        <button
+                          data-slash-id={cmd.id}
+                          classList={{
+                            "w-full flex items-center justify-between gap-4 rounded-md px-2 py-1": true,
+                            "bg-surface-raised-base-hover": slashActive() === cmd.id,
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleSlashSelect(cmd)}
+                        >
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-14-regular text-text-strong whitespace-nowrap">/{cmd.trigger}</span>
+                            <Show when={cmd.description}>
+                              <span class="text-14-regular text-text-weak truncate">{cmd.description}</span>
+                            </Show>
+                          </div>
+                          <div class="flex items-center gap-2 shrink-0">
+                            <Show when={cmd.type === "custom"}>
+                              <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
+                                custom
+                              </span>
+                            </Show>
+                            <Show when={cmd.type === "claude-code"}>
+                              <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
+                                claude code
+                              </span>
+                            </Show>
+                            <Show when={cmd.type === "codex"}>
+                              <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
+                                codex
+                              </span>
+                            </Show>
+                            <Show when={command.keybind(cmd.id)}>
+                              <span class="text-12-regular text-text-subtle">{command.keybind(cmd.id)}</span>
+                            </Show>
+                          </div>
+                        </button>
+                      )}
+                    </For>
+                  </Show>
+                }
               >
-                <For each={slashFlat()}>
-                  {(cmd) => (
+                {/* Nested options tray */}
+                <div class="flex flex-col">
+                  {/* Header with back button */}
+                  <div class="flex items-center gap-2 px-2 py-1.5 border-b border-border-base">
                     <button
-                      data-slash-id={cmd.id}
-                      classList={{
-                        "w-full flex items-center justify-between gap-4 rounded-md px-2 py-1": true,
-                        "bg-surface-raised-base-hover": slashActive() === cmd.id,
-                      }}
+                      type="button"
+                      class="p-0.5 rounded hover:bg-surface-raised-base-hover"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleSlashSelect(cmd)}
+                      onClick={handleNestedBack}
                     >
-                      <div class="flex items-center gap-2 min-w-0">
-                        <span class="text-14-regular text-text-strong whitespace-nowrap">/{cmd.trigger}</span>
-                        <Show when={cmd.description}>
-                          <span class="text-14-regular text-text-weak truncate">{cmd.description}</span>
-                        </Show>
-                      </div>
-                      <div class="flex items-center gap-2 shrink-0">
-                        <Show when={cmd.type === "custom"}>
-                          <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
-                            custom
-                          </span>
-                        </Show>
-                        <Show when={cmd.type === "claude-code"}>
-                          <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
-                            claude code
-                          </span>
-                        </Show>
-                        <Show when={cmd.type === "codex"}>
-                          <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
-                            codex
-                          </span>
-                        </Show>
-                        <Show when={command.keybind(cmd.id)}>
-                          <span class="text-12-regular text-text-subtle">{command.keybind(cmd.id)}</span>
-                        </Show>
-                      </div>
+                      <Icon name="arrow-left" size="small" />
                     </button>
-                  )}
-                </For>
+                    <span class="text-12-medium text-text-strong">{currentNestedView()?.title}</span>
+                  </div>
+
+                  {/* Loading state */}
+                  <Show when={currentNestedState()?.loading}>
+                    <div class="px-3 py-2 text-text-weak text-14-regular">Loading...</div>
+                  </Show>
+
+                  {/* Input view */}
+                  <Show when={currentNestedView()?.type === "input"}>
+                    <div class="p-2">
+                      <input
+                        type="text"
+                        class="w-full px-2 py-1.5 rounded border border-border-base bg-surface-base text-14-regular text-text-strong placeholder:text-text-weak focus:outline-none focus:ring-1 focus:ring-icon-info-active"
+                        placeholder={(currentNestedView() as { type: "input"; placeholder: string })?.placeholder}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            handleNestedInputSubmit((e.target as HTMLInputElement).value)
+                          } else if (e.key === "Escape") {
+                            e.preventDefault()
+                            handleNestedBack()
+                          }
+                        }}
+                        autofocus
+                      />
+                    </div>
+                  </Show>
+
+                  {/* Options list */}
+                  <Show when={currentNestedView()?.type !== "input" && !currentNestedState()?.loading}>
+                    <For each={currentNestedState()?.options ?? []}>
+                      {(option, index) => (
+                        <button
+                          type="button"
+                          classList={{
+                            "w-full flex flex-col gap-0.5 px-2 py-1.5 text-left rounded-md": true,
+                            "bg-surface-raised-base-hover": currentNestedState()?.activeIndex === index(),
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onMouseEnter={() =>
+                            setStore("nestedStack", store.nestedStack.length - 1, "activeIndex", index())
+                          }
+                          onClick={() => handleNestedSelect(option)}
+                        >
+                          <span class="text-14-regular text-text-strong">{option.label}</span>
+                          <Show when={option.description}>
+                            <span class="text-12-regular text-text-weak">{option.description}</span>
+                          </Show>
+                        </button>
+                      )}
+                    </For>
+                  </Show>
+                </div>
               </Show>
             </Match>
           </Switch>

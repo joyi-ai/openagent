@@ -131,7 +131,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
         requestID: request.id,
         answers,
       })
-    } catch {
+    } finally {
       setIsSubmitting(false)
     }
   }

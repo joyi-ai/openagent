@@ -129,7 +129,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
 
     function addPaneFromFocused(directoryFallback?: string, options?: { focus?: boolean }) {
       const focused = focusedPane()
-      const directory = focused ? focused.directory : directoryFallback
+      const directory = focused?.directory ?? directoryFallback
       const id = addPane(directory, undefined, options)
       copyPaneSetup(focused?.id, id)
       return id
