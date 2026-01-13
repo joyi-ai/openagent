@@ -445,13 +445,12 @@ export namespace SessionPrompt {
           })
         }
       }
-      await SessionSummary.summarize({
+      SessionSummary.summarize({
         sessionID,
         messageID: input.userMessageID,
       })
     }
     while (true) {
-      SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
       if (abort.aborted) break
       let msgs = await MessageV2.filterCompacted(MessageV2.stream(sessionID))
@@ -483,6 +482,7 @@ export namespace SessionPrompt {
         break
       }
 
+      SessionStatus.set(sessionID, { type: "busy" })
       step++
       if (step === 1)
         ensureTitle({
@@ -1044,6 +1044,7 @@ export namespace SessionPrompt {
       }
       continue
     }
+    SessionStatus.set(sessionID, { type: "idle" })
     SessionCompaction.prune({ sessionID })
     for await (const item of MessageV2.stream(sessionID)) {
       if (item.info.role === "user") continue
