@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createSignal, type Accessor } from "solid-js"
+import { batch, createMemo, createRoot, createSignal, type Accessor } from "solid-js"
 import { useParams } from "@solidjs/router"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
@@ -133,6 +133,19 @@ type PromptStore = {
   entries: Record<string, PromptEntry>
 }
 
+type SharedPromptStore = {
+  entries: Record<string, PromptEntry>
+  actions: Record<string, PromptAction | undefined>
+}
+
+const sharedPaneStore = createRoot(() => {
+  const [store, setStore] = createStore<SharedPromptStore>({
+    entries: {},
+    actions: {},
+  })
+  return { store, setStore }
+})
+
 function createDefaultEntry(): PromptEntry {
   return {
     prompt: clonePrompt(DEFAULT_PROMPT),
@@ -182,10 +195,7 @@ function createPromptContext(paneId?: string | Accessor<string | undefined>) {
   const params = useParams()
   const getPaneId = typeof paneId === "function" ? paneId : () => paneId
 
-  const [paneStore, setPaneStore] = createStore<PromptStore>({
-    entries: {},
-  })
-  const [action, setAction] = createSignal<PromptAction | undefined>()
+  const [localAction, setLocalAction] = createSignal<PromptAction | undefined>()
 
   const key = createMemo(() => `${params.dir}/prompt${params.id ? "/" + params.id : ""}.v1`)
   const [store, setStore, _, ready] = persisted(
@@ -197,17 +207,15 @@ function createPromptContext(paneId?: string | Accessor<string | undefined>) {
 
   const currentEntry = createMemo(() => {
     const pane = getPaneId()
-    if (pane) {
-      return normalizeEntry(paneStore.entries[pane])
-    }
+    if (pane) return normalizeEntry(sharedPaneStore.store.entries[pane])
     return normalizeEntry(store.entries[key()])
   })
 
   const updateEntry = (updater: (entry: PromptEntry) => PromptEntry) => {
     const pane = getPaneId()
     if (pane) {
-      const base = normalizeEntry(paneStore.entries[pane])
-      setPaneStore("entries", pane, updater(base))
+      const base = normalizeEntry(sharedPaneStore.store.entries[pane])
+      sharedPaneStore.setStore("entries", pane, updater(base))
       return
     }
     const next = updater(currentEntry())
@@ -220,6 +228,21 @@ function createPromptContext(paneId?: string | Accessor<string | undefined>) {
   }
 
   const methods = createPromptMethods(() => currentEntry(), updateEntry, isReady)
+  const action = createMemo(() => {
+    const pane = getPaneId()
+    if (pane) return sharedPaneStore.store.actions[pane]
+    return localAction()
+  })
+
+  const setAction = (next: PromptAction | undefined) => {
+    const pane = getPaneId()
+    if (pane) {
+      sharedPaneStore.setStore("actions", pane, next)
+      return
+    }
+    setLocalAction(next)
+  }
+
   return {
     ...methods,
     action: {

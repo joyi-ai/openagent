@@ -224,7 +224,8 @@ export function useMessageActions() {
         return false
       })
     if (!reverted) return
-    await sdk.client.session.summarize({ sessionID: message.sessionID }).catch((e) => {
+    const { providerID, modelID } = message.model
+    await sdk.client.session.summarize({ sessionID: message.sessionID, providerID, modelID }).catch((e) => {
       showToast({
         variant: "error",
         title: "Failed to finalize deletion",

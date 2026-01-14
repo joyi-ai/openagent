@@ -42,6 +42,14 @@
   color: var(--icon-critical-base);
 }
 
+[data-component="message-actions"] [data-slot="message-action-restore"][data-confirm="true"] {
+  background-color: var(--surface-warning-weak);
+}
+
+[data-component="message-actions"] [data-slot="message-action-restore"][data-confirm="true"] [data-slot="icon-svg"] {
+  color: var(--icon-warning-base);
+}
+
 [data-component="message-wrapper"]:hover [data-component="message-actions"],
 [data-component="message-wrapper"]:focus-within [data-component="message-actions"] {
   opacity: 1;

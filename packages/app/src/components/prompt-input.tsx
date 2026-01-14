@@ -37,7 +37,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { showToast, toaster } from "@opencode-ai/ui/toast"
+import { showToast } from "@opencode-ai/ui/toast"
 import { MegaSelector } from "@/components/mega-selector"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
@@ -317,19 +317,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let scrollRef!: HTMLDivElement
   let slashPopoverRef!: HTMLDivElement
   let abortingRef = false
-  const [notifierId, setNotifierId] = createSignal<number | undefined>(undefined)
+  let notifierTimeoutId: ReturnType<typeof setTimeout> | undefined
+  const [inlineNotifier, setInlineNotifier] = createSignal<string | null>(null)
 
   const notify = (label: string) => {
-    const prev = notifierId()
-    if (prev !== undefined) {
-      toaster.dismiss(prev)
+    if (notifierTimeoutId !== undefined) {
+      clearTimeout(notifierTimeoutId)
     }
-    const next = showToast({
-      variant: "notifier",
-      title: label,
-    })
-    setNotifierId(next)
+    setInlineNotifier(label)
+    notifierTimeoutId = setTimeout(() => {
+      setInlineNotifier(null)
+      notifierTimeoutId = undefined
+    }, 1500)
   }
+
+  onCleanup(() => {
+    if (notifierTimeoutId !== undefined) {
+      clearTimeout(notifierTimeoutId)
+    }
+  })
 
   command.register(() => [
     {
@@ -395,7 +401,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       slash: "mode",
       onSelect: () => {
         local.mode.move(1)
-        notify(local.mode.current()?.name ?? "Default")
       },
     },
     {
@@ -403,7 +408,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       title: "Cycle thinking effort",
       description: "Switch to the next effort level",
       category: "Model",
-      keybind: "shift+mod+t",
+      keybind: "mod+t",
       onSelect: () => {
         local.model.variant.cycle()
         notify(local.model.variant.current() ?? "Default")
@@ -2643,6 +2648,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               <Match when={store.mode === "normal"}>
                 <MegaSelector />
                 <WorktreeToggleButton />
+                <Show when={inlineNotifier()}>
+                  <div class="flex items-center h-6 px-2 text-12-regular text-text-subtle/70 animate-in slide-in-from-bottom-1 fade-in duration-200">
+                    {inlineNotifier()}
+                  </div>
+                </Show>
               </Match>
             </Switch>
           </div>

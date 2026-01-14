@@ -15,34 +15,55 @@ export function MessageActions(props: ComponentProps<"div"> & MessageActionHandl
   const hasRetry = () => !!local.onRetry
   const hasDelete = () => !!local.onDelete
   const hasActions = () => hasEdit() || hasRestore() || hasRetry() || hasDelete()
-  const [confirmDelete, setConfirmDelete] = createSignal(false)
-  let confirmTimeout: ReturnType<typeof setTimeout> | undefined
+  const [confirmAction, setConfirmAction] = createSignal<"delete" | "restore" | undefined>()
+  const confirmTimeout = {
+    current: undefined as ReturnType<typeof setTimeout> | undefined,
+  }
 
   const clearConfirm = () => {
-    if (confirmTimeout) {
-      clearTimeout(confirmTimeout)
-      confirmTimeout = undefined
+    const current = confirmTimeout.current
+    if (current) {
+      clearTimeout(current)
+      confirmTimeout.current = undefined
     }
-    setConfirmDelete(false)
+    setConfirmAction(undefined)
   }
 
   onCleanup(() => {
-    if (confirmTimeout) clearTimeout(confirmTimeout)
+    const current = confirmTimeout.current
+    if (current) clearTimeout(current)
   })
+
+  const armConfirm = (action: "delete" | "restore") => {
+    setConfirmAction(action)
+    const current = confirmTimeout.current
+    if (current) clearTimeout(current)
+    confirmTimeout.current = setTimeout(() => {
+      confirmTimeout.current = undefined
+      setConfirmAction(undefined)
+    }, 2000)
+  }
+
+  const isConfirming = (action: "delete" | "restore") => confirmAction() === action
+
+  const handleRestore = () => {
+    if (!local.onRestore) return
+    if (isConfirming("restore")) {
+      clearConfirm()
+      local.onRestore()
+      return
+    }
+    armConfirm("restore")
+  }
 
   const handleDelete = () => {
     if (!local.onDelete) return
-    if (confirmDelete()) {
+    if (isConfirming("delete")) {
       clearConfirm()
       local.onDelete()
       return
     }
-    setConfirmDelete(true)
-    if (confirmTimeout) clearTimeout(confirmTimeout)
-    confirmTimeout = setTimeout(() => {
-      confirmTimeout = undefined
-      setConfirmDelete(false)
-    }, 2000)
+    armConfirm("delete")
   }
 
   return (
@@ -68,9 +89,11 @@ export function MessageActions(props: ComponentProps<"div"> & MessageActionHandl
           <IconButton
             variant="ghost"
             icon="arrow-left"
-            aria-label="Restore checkpoint"
-            title="Restore"
-            onClick={() => local.onRestore?.()}
+            aria-label={isConfirming("restore") ? "Confirm restore checkpoint" : "Restore checkpoint"}
+            title={isConfirming("restore") ? "Confirm restore" : "Restore"}
+            data-slot="message-action-restore"
+            data-confirm={isConfirming("restore") ? "true" : undefined}
+            onClick={handleRestore}
           />
         </Show>
         <Show when={hasRetry()}>
@@ -86,10 +109,10 @@ export function MessageActions(props: ComponentProps<"div"> & MessageActionHandl
           <IconButton
             variant="ghost"
             icon="circle-x"
-            aria-label={confirmDelete() ? "Confirm delete message" : "Delete message"}
-            title={confirmDelete() ? "Confirm delete" : "Delete"}
+            aria-label={isConfirming("delete") ? "Confirm delete message" : "Delete message"}
+            title={isConfirming("delete") ? "Confirm delete" : "Delete"}
             data-slot="message-action-delete"
-            data-confirm={confirmDelete() ? "true" : undefined}
+            data-confirm={isConfirming("delete") ? "true" : undefined}
             onClick={handleDelete}
           />
         </Show>
