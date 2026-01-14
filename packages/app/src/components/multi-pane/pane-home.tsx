@@ -91,6 +91,9 @@ export function PaneHome(props: PaneHomeProps) {
         }}
         {...paneDragHandlers}
         onMouseDown={(event) => {
+          // Allow right-click to bubble up to the pane grid so the radial dial
+          // can open even when the cursor is over the header overlay.
+          if (event.button === 2) return
           event.stopPropagation()
         }}
         onMouseEnter={() => headerOverlay.setIsOverHeader(true)}

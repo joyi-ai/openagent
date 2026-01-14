@@ -1,6 +1,5 @@
 import { For, Show, createMemo, createEffect, on, onCleanup, createSignal, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
-import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { SessionTodoFooter } from "@opencode-ai/ui/session-todo-footer"
 import { SessionMessageRail } from "@opencode-ai/ui/session-message-rail"
@@ -10,7 +9,6 @@ import { DateTime } from "luxon"
 import { createDraggable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
-import { useLayout } from "@/context/layout"
 import { useMultiPane } from "@/context/multi-pane"
 import { useHeaderOverlay } from "@/hooks/use-header-overlay"
 import { useSessionMessages } from "@/hooks/use-session-messages"
@@ -19,7 +17,6 @@ import { useSessionCommands } from "@/hooks/use-session-commands"
 import { useMessageActions } from "@/hooks/use-message-actions"
 import { ThemeDropup } from "@/components/theme-dropup"
 import { SessionPaneHeader } from "./header"
-import { ReviewPanel } from "./review-panel"
 import { MobileView } from "./mobile-view"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { useNotification } from "@/context/notification"
@@ -33,13 +30,11 @@ export interface SessionPaneProps {
   onSessionChange?: (sessionId: string | undefined) => void
   onDirectoryChange?: (directory: string) => void
   onClose?: () => void
-  reviewMode?: "pane" | "global"
 }
 
 export function SessionPane(props: SessionPaneProps) {
   const sync = useSync()
   const sdk = useSDK()
-  const layout = useLayout()
   const multiPane = useMultiPane()
   const notification = useNotification()
   const messageActions = useMessageActions()
@@ -49,7 +44,6 @@ export function SessionPane(props: SessionPaneProps) {
   const [store, setStore] = createStore({
     stepsExpanded: {} as Record<string, boolean>,
     userInteracted: false,
-    activeDraggable: undefined as string | undefined,
     turnLimit: 30,
     didRestoreScroll: {} as Record<string, boolean>,
     loadingMore: false,
@@ -68,22 +62,6 @@ export function SessionPane(props: SessionPaneProps) {
   const sessionKey = createMemo(
     () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
   )
-
-  // Tab management
-  const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const view = createMemo(() => layout.view(sessionKey()))
-
-  // Session info
-  const info = createMemo(() => {
-    const id = sessionId()
-    return id ? sync.session.get(id) : undefined
-  })
-
-  // Diffs
-  const diffs = createMemo(() => {
-    const id = sessionId()
-    return id ? (sync.data.session_diff[id] ?? []) : []
-  })
 
   // Todos
   const todos = createMemo(() => {
@@ -208,15 +186,6 @@ export function SessionPane(props: SessionPaneProps) {
     visibleUserMessages: sessionMessages.visibleUserMessages,
   })
 
-  // Computed: show tabs panel
-  const contextOpen = createMemo(() => tabs().active() === "context" || tabs().all().includes("context"))
-  const allowLocalReview = createMemo(() => props.reviewMode !== "global")
-  const showTabs = createMemo(
-    () =>
-      allowLocalReview() &&
-      view().reviewPanel.opened() &&
-      (diffs().length > 0 || tabs().all().length > 0 || contextOpen()),
-  )
 
   const sessionTurnPadding = () => "pb-0"
 
@@ -492,7 +461,7 @@ export function SessionPane(props: SessionPaneProps) {
           messages={sessionMessages.visibleUserMessages()}
           current={sessionMessages.activeMessage()}
           onMessageSelect={handleMessageSelect}
-          wide={!showTabs()}
+          wide={true}
         />
         <div
           ref={setDesktopScrollRef}
@@ -520,13 +489,7 @@ export function SessionPane(props: SessionPaneProps) {
                     classes={{
                       root: "min-w-0 w-full relative !h-auto",
                       content: "flex flex-col justify-between !overflow-visible !h-auto",
-                      container:
-                        "w-full " +
-                        (!showTabs()
-                          ? "max-w-200 mx-auto px-6"
-                          : sessionMessages.visibleUserMessages().length > 1
-                            ? "pr-6 pl-18"
-                            : "px-6"),
+                      container: "w-full max-w-200 mx-auto px-6",
                     }}
                   />
                 )}
@@ -604,6 +567,9 @@ export function SessionPane(props: SessionPaneProps) {
         }}
         {...paneDragHandlers}
         onMouseDown={(e) => {
+          // Allow right-click to bubble up to the pane grid so the radial dial
+          // can open even when the cursor is over the header overlay.
+          if (e.button === 2) return
           e.stopPropagation()
         }}
         onMouseEnter={() => headerOverlay.setIsOverHeader(true)}
@@ -633,7 +599,6 @@ export function SessionPane(props: SessionPaneProps) {
           sessionId={sessionId()}
           visibleUserMessages={sessionMessages.visibleUserMessages}
           lastUserMessage={sessionMessages.lastUserMessage}
-          diffs={diffs}
           working={working}
           onUserInteracted={() => setStore("userInteracted", true)}
           messageActions={{
@@ -647,39 +612,11 @@ export function SessionPane(props: SessionPaneProps) {
 
         {/* Desktop view */}
         <div class="flex-1 min-h-0 flex">
-          <div
-            class="@container relative shrink-0 py-3 flex flex-col gap-6 min-h-0 h-full"
-            style={{
-              width: showTabs() ? `${layout.session.width()}px` : "100%",
-            }}
-          >
+          <div class="@container relative shrink-0 py-3 flex flex-col gap-6 min-h-0 h-full w-full">
             <div class="flex-1 min-h-0 overflow-hidden">
               <DesktopSessionContent />
             </div>
-            <Show when={showTabs()}>
-              <ResizeHandle
-                direction="horizontal"
-                size={layout.session.width()}
-                min={450}
-                max={window.innerWidth * 0.45}
-                onResize={layout.session.resize}
-              />
-            </Show>
           </div>
-
-          {/* Review panel */}
-          <Show when={showTabs()}>
-            <ReviewPanel
-              sessionKey={sessionKey()}
-              sessionId={sessionId()}
-              diffs={diffs()}
-              sessionInfo={info()}
-              activeDraggable={store.activeDraggable}
-              onDragStart={(id) => setStore("activeDraggable", id)}
-              onDragEnd={() => setStore("activeDraggable", undefined)}
-              onClose={() => view().reviewPanel.close()}
-            />
-          </Show>
         </div>
       </div>
     </div>
@@ -687,6 +624,5 @@ export function SessionPane(props: SessionPaneProps) {
 }
 
 export { SessionPaneHeader } from "./header"
-export { ReviewPanel } from "./review-panel"
 export { ContextTab } from "./context-tab"
 export { MobileView } from "./mobile-view"

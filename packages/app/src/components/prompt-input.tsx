@@ -104,7 +104,6 @@ const PLACEHOLDERS = [
 
 type CodexSlashAction =
   | { kind: "command"; id: string }
-  | { kind: "review-panel"; tab: "review" | "context" }
   | { kind: "summarize" }
   | { kind: "insert"; text: string; popover?: "at" | "slash" }
   | { kind: "settings" }
@@ -220,22 +219,10 @@ const CODEX_SLASH_COMMANDS: CodexSlashCommand[] = [
     action: { kind: "summarize" },
   },
   {
-    trigger: "diff",
-    title: "Diff",
-    description: "show git diff (including untracked files)",
-    action: { kind: "review-panel", tab: "review" },
-  },
-  {
     trigger: "mention",
     title: "Mention",
     description: "mention a file",
     action: { kind: "insert", text: "@", popover: "at" },
-  },
-  {
-    trigger: "status",
-    title: "Status",
-    description: "show current session configuration and token usage",
-    action: { kind: "review-panel", tab: "context" },
   },
   {
     trigger: "mcp",
@@ -949,11 +936,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!action) return false
     if (action.kind === "command") {
       command.trigger(action.id, "slash")
-      return true
-    }
-    if (action.kind === "review-panel") {
-      view().reviewPanel.open()
-      tabs().open(action.tab)
       return true
     }
     if (action.kind === "insert") {

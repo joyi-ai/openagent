@@ -25,7 +25,6 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     () => props.sessionKey ?? `${params.dir}${effectiveSessionId() ? "/" + effectiveSessionId() : ""}`,
   )
   const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const view = createMemo(() => layout.view(sessionKey()))
   const messages = createMemo(() => (effectiveSessionId() ? (sync.data.message[effectiveSessionId()!] ?? []) : []))
 
   const cost = createMemo(() => {
@@ -54,7 +53,6 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const openContext = () => {
     if (!effectiveSessionId()) return
-    view().reviewPanel.open()
     tabs().open("context")
     tabs().setActive("context")
   }

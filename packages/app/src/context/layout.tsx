@@ -34,7 +34,6 @@ type SessionView = {
   scroll: Record<string, SessionScroll>
   reviewOpen?: string[]
   terminalOpened?: boolean
-  reviewPanelOpened?: boolean
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
@@ -155,7 +154,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const current = store.sessionView[sessionKey]
         const keep = meta.active ?? sessionKey
         if (!current) {
-          setStore("sessionView", sessionKey, { scroll: next, terminalOpened: false, reviewPanelOpened: true })
+          setStore("sessionView", sessionKey, { scroll: next, terminalOpened: false })
           prune(keep)
           return
         }
@@ -370,30 +369,17 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         scroll.seed(sessionKey)
         const s = createMemo(() => store.sessionView[sessionKey] ?? { scroll: {} })
         const terminalOpened = createMemo(() => s().terminalOpened ?? false)
-        const reviewPanelOpened = createMemo(() => s().reviewPanelOpened ?? true)
 
         function setTerminalOpened(next: boolean) {
           const current = store.sessionView[sessionKey]
           if (!current) {
-            setStore("sessionView", sessionKey, { scroll: {}, terminalOpened: next, reviewPanelOpened: true })
+            setStore("sessionView", sessionKey, { scroll: {}, terminalOpened: next })
             return
           }
 
           const value = current.terminalOpened ?? false
           if (value === next) return
           setStore("sessionView", sessionKey, "terminalOpened", next)
-        }
-
-        function setReviewPanelOpened(next: boolean) {
-          const current = store.sessionView[sessionKey]
-          if (!current) {
-            setStore("sessionView", sessionKey, { scroll: {}, terminalOpened: false, reviewPanelOpened: next })
-            return
-          }
-
-          const value = current.reviewPanelOpened ?? true
-          if (value === next) return
-          setStore("sessionView", sessionKey, "reviewPanelOpened", next)
         }
 
         return {
@@ -415,18 +401,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               setTerminalOpened(!terminalOpened())
             },
           },
-          reviewPanel: {
-            opened: reviewPanelOpened,
-            open() {
-              setReviewPanelOpened(true)
-            },
-            close() {
-              setReviewPanelOpened(false)
-            },
-            toggle() {
-              setReviewPanelOpened(!reviewPanelOpened())
-            },
-          },
           review: {
             open: createMemo(() => s().reviewOpen),
             setOpen(open: string[]) {
@@ -435,7 +409,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
                 setStore("sessionView", sessionKey, {
                   scroll: {},
                   terminalOpened: false,
-                  reviewPanelOpened: true,
                   reviewOpen: open,
                 })
                 return

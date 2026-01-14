@@ -71,15 +71,6 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       onSelect: () => view().terminal.toggle(),
     },
     {
-      id: "review.toggle",
-      title: "Toggle review",
-      description: "Show or hide the review panel",
-      category: "View",
-      keybind: "mod+shift+r",
-      disabled: !enabled(),
-      onSelect: () => view().reviewPanel.toggle(),
-    },
-    {
       id: "terminal.new",
       title: "New terminal",
       description: "Create a new terminal tab",

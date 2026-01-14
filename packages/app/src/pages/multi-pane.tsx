@@ -3,7 +3,6 @@ import { useSearchParams } from "@solidjs/router"
 import { useMultiPane } from "@/context/multi-pane"
 import { PaneGrid } from "@/components/pane-grid"
 import { SessionPane } from "@/components/session-pane"
-import { ReviewPanel } from "@/components/session-pane/review-panel"
 import { useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -163,50 +162,6 @@ function GlobalPromptSynced(props: { paneId: string; directory: string; sessionI
   )
 }
 
-function GlobalReviewSynced(props: { paneId: string; directory: string; sessionId?: string }) {
-  const layout = useLayout()
-  const sync = useSync()
-  const [activeDraggable, setActiveDraggable] = createSignal<string | undefined>(undefined)
-
-  const sessionKey = createMemo(
-    () => `multi-${props.paneId}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
-  )
-  const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const contextOpen = createMemo(() => tabs().active() === "context" || tabs().all().includes("context"))
-  const diffs = createMemo(() => (props.sessionId ? (sync.data.session_diff[props.sessionId] ?? []) : []))
-  const sessionInfo = createMemo(() => (props.sessionId ? sync.session.get(props.sessionId) : undefined))
-  const showReview = createMemo(() => diffs().length > 0 || tabs().all().length > 0 || contextOpen())
-
-  createEffect(
-    on(
-      () => props.sessionId,
-      (sessionId) => {
-        if (!sessionId) return
-        void sync.session.diff(sessionId)
-      },
-    ),
-  )
-
-  return (
-    <LocalProvider>
-      <FileProvider>
-        <Show when={showReview()}>
-          <div class="shrink-0 h-full hidden md:block" style={{ width: "clamp(360px, 35vw, 520px)" }}>
-            <ReviewPanel
-              sessionKey={sessionKey()}
-              sessionId={props.sessionId}
-              diffs={diffs()}
-              sessionInfo={sessionInfo()}
-              activeDraggable={activeDraggable()}
-              onDragStart={(id) => setActiveDraggable(id)}
-              onDragEnd={() => setActiveDraggable(undefined)}
-            />
-          </div>
-        </Show>
-      </FileProvider>
-    </LocalProvider>
-  )
-}
 
 // Global prompt wrapper that switches based on focused pane
 function GlobalPromptWrapper() {
@@ -230,26 +185,6 @@ function GlobalPromptWrapper() {
   )
 }
 
-function GlobalReviewWrapper() {
-  const multiPane = useMultiPane()
-  const focused = createMemo(() => multiPane.focusedPane())
-
-  return (
-    <Show when={focused()} keyed>
-      {(pane) => (
-        <Show when={pane.directory}>
-          {(directory) => (
-            <SDKProvider directory={directory()}>
-              <SyncProvider>
-                <GlobalReviewSynced paneId={pane.id} directory={directory()} sessionId={pane.sessionId} />
-              </SyncProvider>
-            </SDKProvider>
-          )}
-        </Show>
-      )}
-    </Show>
-  )
-}
 
 function MultiPaneContent(props: MultiPanePageProps) {
   const multiPane = useMultiPane()
@@ -616,7 +551,6 @@ function MultiPaneContent(props: MultiPanePageProps) {
                                   directory={pane.directory!}
                                   sessionId={pane.sessionId!}
                                   isFocused={isFocused}
-                                  reviewMode="global"
                                   onSessionChange={(sessionId: string | undefined) =>
                                     multiPane.updatePane(pane.id, { sessionId })
                                   }
@@ -650,9 +584,6 @@ function MultiPaneContent(props: MultiPanePageProps) {
                 </DragOverlay>
               </DragDropProvider>
             </div>
-            <Show when={!multiPane.maximizedPaneId()}>
-              <GlobalReviewWrapper />
-            </Show>
           </div>
           <GlobalPromptWrapper />
         </Show>

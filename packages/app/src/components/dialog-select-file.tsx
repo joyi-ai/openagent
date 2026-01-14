@@ -19,7 +19,6 @@ export function DialogSelectFile(props: DialogSelectFileProps) {
   const params = useParams()
   const sessionKey = createMemo(() => props.sessionKey ?? `${params.dir}${params.id ? "/" + params.id : ""}`)
   const tabs = createMemo(() => layout.tabs(sessionKey()))
-  const view = createMemo(() => layout.view(sessionKey()))
   return (
     <Dialog title="Select file">
       <List
@@ -32,7 +31,6 @@ export function DialogSelectFile(props: DialogSelectFileProps) {
             const value = file.tab(path)
             tabs().open(value)
             file.load(path)
-            view().reviewPanel.open()
           }
           dialog.close()
         }}
