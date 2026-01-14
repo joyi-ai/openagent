@@ -409,13 +409,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         fetch: async (count = 10) => {
           const [localStore, localSetStore] = child()
           const client = sdk.client
-          localSetStore("limit", (x) => x + count)
-          await client.session.list().then((x) => {
+          const limit = localStore.limit + count
+          localSetStore("limit", limit)
+          await client.session.list({ limit }).then((x) => {
             const sessions = (x.data ?? [])
               .filter((s) => !!s?.id)
               .slice()
               .sort((a, b) => a.id.localeCompare(b.id))
-              .slice(0, localStore.limit)
+              .slice(0, limit)
             localSetStore("session", reconcile(sessions, { key: "id" }))
           })
         },

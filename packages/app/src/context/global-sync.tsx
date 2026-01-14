@@ -119,7 +119,19 @@ function createGlobalSync() {
   })
 
   const children: Record<string, ReturnType<typeof createStore<State>>> = {}
-  const sessionListInflight = new Map<string, { limit: number; promise: Promise<void> }>()
+  const sessionListInflight = new Map<string, { target: number; promise: Promise<void> }>()
+  const sessionCursor = (sessions: Session[]) => {
+    if (sessions.length === 0) return
+    const ordered = sessions
+      .slice()
+      .sort((a, b) => {
+        const aUpdated = a.time.updated ?? a.time.created ?? 0
+        const bUpdated = b.time.updated ?? b.time.created ?? 0
+        if (aUpdated !== bUpdated) return bUpdated - aUpdated
+        return b.id.localeCompare(a.id)
+      })
+    return ordered.at(-1)?.id
+  }
   function child(directory: string) {
     if (!directory) console.error("No directory provided")
     if (!children[directory]) {
@@ -153,16 +165,25 @@ function createGlobalSync() {
 
   async function loadSessions(directory: string) {
     const [store, setStore] = child(directory)
-    const limit = Math.max(1, store.limit)
+    const target = Math.max(1, store.limit)
 
     const inflight = sessionListInflight.get(directory)
     if (inflight) {
-      if (inflight.limit >= limit) return inflight.promise
+      if (inflight.target >= target) return inflight.promise
       return inflight.promise.finally(() => loadSessions(directory))
     }
 
+    const currentCount = store.session.length
+    const remaining = target - currentCount
+    if (remaining <= 0) return
+
+    const afterID = sessionCursor(store.session)
+    const pageLimit = Math.max(1, remaining)
+    const limit = pageLimit + 1
+
+    const query = afterID ? { directory, limit, afterID } : { directory, limit }
     const promise = globalSDK.client.session
-      .list({ directory, limit })
+      .list(query)
       .then((x) => {
         const root = normalizeDirectory(directory)
         const fallback = normalizeDirectory(globalStore.path.directory)
@@ -185,10 +206,23 @@ function createGlobalSync() {
             if (session.directory) return session
             return { ...session, directory }
           })
-        const sessions = fetched.slice(0, limit).sort((a, b) => a.id.localeCompare(b.id))
+        const sessions = fetched.slice(0, pageLimit)
+        const hasMore = (x.data ?? []).length > pageLimit
         batch(() => {
-          setStore("session_more", (x.data ?? []).length >= limit)
-          setStore("session", reconcile(sessions, { key: "id" }))
+          setStore("session_more", hasMore)
+          setStore(
+            "session",
+            produce((draft) => {
+              for (const session of sessions) {
+                const result = Binary.search(draft, session.id, (s) => s.id)
+                if (result.found) {
+                  draft[result.index] = session
+                  continue
+                }
+                draft.splice(result.index, 0, session)
+              }
+            }),
+          )
         })
       })
       .catch((err) => {
@@ -203,7 +237,7 @@ function createGlobalSync() {
         }
       })
 
-    sessionListInflight.set(directory, { limit, promise })
+    sessionListInflight.set(directory, { target, promise })
     return promise
   }
 

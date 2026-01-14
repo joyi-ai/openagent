@@ -42,6 +42,7 @@ import { ClaudeAgentProcessor } from "../session/claude-agent-processor"
 import { InstanceBootstrap } from "../project/bootstrap"
 import { MCP } from "../mcp"
 import { Storage } from "../storage/storage"
+import { StorageSqlite } from "../storage/sqlite"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { Snapshot } from "@/snapshot"
 import { SessionSummary } from "@/session/summary"
@@ -222,41 +223,11 @@ export namespace Server {
   }
 
   /**
-   * Populate cache from filesystem sessions
-   */
-  async function populateSessionCache() {
-    const sessions = await Array.fromAsync(Session.list())
-    for (const session of sessions) {
-      Cache.Session.upsert({
-        id: session.id,
-        projectID: session.projectID,
-        parentID: session.parentID,
-        title: session.title,
-        directory: session.directory,
-        version: session.version,
-        time: {
-          created: session.time.created,
-          updated: session.time.updated,
-          archived: session.time.archived,
-        },
-        summary: session.summary
-          ? {
-              additions: session.summary.additions,
-              deletions: session.summary.deletions,
-              files: session.summary.files,
-            }
-          : undefined,
-        share: session.share,
-        worktree: session.worktree,
-        data: sessionCacheData(session),
-      })
-    }
-  }
-
-  /**
    * Convert cache row to Session.Info format
    */
-  function cacheRowToSessionInfo(row: ReturnType<typeof Cache.Session.read>): Session.Info | null {
+  type SessionRow = Cache.SessionRow | StorageSqlite.SessionIndexRecord
+
+  function cacheRowToSessionInfo(row: SessionRow | null): Session.Info | null {
     if (!row) return null
     const data = row.data
       ? (JSON.parse(row.data) as {
@@ -1096,36 +1067,27 @@ export namespace Server {
                 .number()
                 .optional()
                 .meta({ description: "Filter sessions updated on or after this timestamp (milliseconds since epoch)" }),
+              afterID: Identifier.schema("session").optional().meta({
+                description: "Return sessions older than this session ID (uses last-updated ordering)",
+              }),
+              directory: z.string().optional().meta({ description: "Filter sessions by directory" }),
               search: z.string().optional().meta({ description: "Filter sessions by title (case-insensitive)" }),
               limit: z.coerce.number().optional().meta({ description: "Maximum number of sessions to return" }),
             }),
           ),
           async (c) => {
             const query = c.req.valid("query")
-            const term = query.search?.toLowerCase()
-
-            // Try cache first
             const projectID = Instance.project.id
-            let cachedSessions = Cache.Session.list(projectID)
-
-            // If cache is empty, populate from filesystem
-            if (cachedSessions.length === 0) {
-              await populateSessionCache()
-              cachedSessions = Cache.Session.list(projectID)
-            }
-
-            // Convert cache rows to Session.Info format
-            const sessions = cachedSessions
-              .map(cacheRowToSessionInfo)
-              .filter((s): s is Session.Info => s !== null && !s.time.archived)
-              .sort((a, b) => b.time.updated - a.time.updated)
-              .filter((session) => {
-                if (query.start !== undefined && session.time.updated < query.start) return false
-                if (term !== undefined && !session.title.toLowerCase().includes(term)) return false
-                return true
-              })
-
-            if (query.limit !== undefined) return c.json(sessions.slice(0, query.limit))
+            const rows = StorageSqlite.listSessionIndex({
+              projectID,
+              start: query.start,
+              afterID: query.afterID,
+              directory: query.directory,
+              search: query.search,
+              limit: query.limit,
+              includeArchived: false,
+            })
+            const sessions = rows.map(cacheRowToSessionInfo).filter((s): s is Session.Info => s !== null)
             return c.json(sessions)
           },
         )
@@ -1679,6 +1641,14 @@ export namespace Server {
             z.object({
               limit: z.coerce.number().optional(),
               afterID: Identifier.schema("message").optional(),
+              parts: z
+                .enum(["true", "false"])
+                .optional()
+                .transform((value) => {
+                  if (value === "true") return true
+                  if (value === "false") return false
+                  return undefined
+                }),
             }),
           ),
           async (c) => {
@@ -1687,6 +1657,7 @@ export namespace Server {
               sessionID: c.req.valid("param").sessionID,
               limit: query.limit,
               afterID: query.afterID,
+              parts: query.parts,
             })
             return c.json(messages)
           },

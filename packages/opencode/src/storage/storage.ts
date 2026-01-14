@@ -277,6 +277,7 @@ export namespace Storage {
       await Bun.write(path.join(dir, "migration"), (index + 1).toString())
     }
     await migrateToSqlite(dir)
+    StorageSqlite.ensureSessionIndex()
     return {
       dir,
     }

@@ -1487,6 +1487,7 @@ export class Session extends HeyApiClient {
     parameters?: {
       directory?: string
       start?: number
+      afterID?: string
       search?: string
       limit?: number
     },
@@ -1499,6 +1500,7 @@ export class Session extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "start" },
+            { in: "query", key: "afterID" },
             { in: "query", key: "search" },
             { in: "query", key: "limit" },
           ],
@@ -1991,6 +1993,7 @@ export class Session extends HeyApiClient {
       directory?: string
       limit?: number
       afterID?: string
+      parts?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2003,6 +2006,7 @@ export class Session extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "limit" },
             { in: "query", key: "afterID" },
+            { in: "query", key: "parts" },
           ],
         },
       ],

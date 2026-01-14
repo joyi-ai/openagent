@@ -11,11 +11,51 @@ export namespace StorageSqlite {
     time?: { created?: number; updated?: number }
   } & Record<string, unknown>
 
+  export type SessionIndexRecord = {
+    id: string
+    projectID: string
+    parentID: string | null
+    title: string
+    directory: string
+    version: string | null
+    created_at: number | null
+    updated_at: number | null
+    archived_at: number | null
+    additions: number
+    deletions: number
+    files_changed: number
+    share_url: string | null
+    worktree_path: string | null
+    worktree_branch: string | null
+    data: string | null
+  }
+
+  export type SessionIndexRow = SessionIndexRecord
+
+  type SessionIndexInput = SessionRecord & {
+    title?: string
+    directory?: string
+    version?: string
+    summary?: { additions?: number; deletions?: number; files?: number }
+    share?: { url?: string }
+    worktree?: { path?: string; branch?: string }
+    mode?: unknown
+    agent?: string
+    model?: unknown
+    variant?: string | null
+    thinking?: boolean
+    worktreeRequested?: boolean
+    worktreeCleanup?: unknown
+    time?: { created?: number; updated?: number; archived?: number }
+  }
+
   export type MessageRecord = {
     info: {
       id: string
       sessionID: string
-      time?: { created?: number }
+      role?: string
+      parentID?: string
+      time?: { created?: number; completed?: number }
     }
   } & Record<string, unknown>
 
@@ -51,6 +91,31 @@ export namespace StorageSqlite {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_project_updated ON sessions(projectID, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parentID);
+
+    CREATE TABLE IF NOT EXISTS session_index (
+      id TEXT PRIMARY KEY,
+      projectID TEXT NOT NULL,
+      parentID TEXT,
+      title TEXT NOT NULL,
+      directory TEXT NOT NULL,
+      version TEXT,
+      created_at INTEGER,
+      updated_at INTEGER,
+      archived_at INTEGER,
+      additions INTEGER DEFAULT 0,
+      deletions INTEGER DEFAULT 0,
+      files_changed INTEGER DEFAULT 0,
+      share_url TEXT,
+      worktree_path TEXT,
+      worktree_branch TEXT,
+      data TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_index_project_updated ON session_index(projectID, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_index_parent ON session_index(parentID);
+    CREATE INDEX IF NOT EXISTS idx_session_index_project_archived ON session_index(projectID, archived_at);
+    CREATE INDEX IF NOT EXISTS idx_session_index_project_title ON session_index(projectID, title COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_session_index_project_directory_updated ON session_index(projectID, directory, updated_at DESC, id DESC);
 
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
@@ -103,6 +168,117 @@ export namespace StorageSqlite {
     db().run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [key, value])
   }
 
+  function sessionIndexData(session: SessionIndexInput) {
+    const data = {
+      ...(session.mode ? { mode: session.mode } : {}),
+      ...(session.agent ? { agent: session.agent } : {}),
+      ...(session.model ? { model: session.model } : {}),
+      ...(session.variant !== undefined ? { variant: session.variant } : {}),
+      ...(session.thinking !== undefined ? { thinking: session.thinking } : {}),
+      ...(session.worktreeRequested ? { worktreeRequested: true } : {}),
+      ...(session.worktreeCleanup ? { worktreeCleanup: session.worktreeCleanup } : {}),
+    }
+    const has =
+      data.mode !== undefined ||
+      data.agent !== undefined ||
+      data.model !== undefined ||
+      data.variant !== undefined ||
+      data.thinking !== undefined ||
+      data.worktreeRequested !== undefined ||
+      data.worktreeCleanup !== undefined
+    if (!has) return
+    return data
+  }
+
+  function sessionIndexRow(session: SessionIndexInput) {
+    const title = typeof session.title === "string" ? session.title : ""
+    if (!title) return
+    const directory = typeof session.directory === "string" ? session.directory : ""
+    if (!directory) return
+    const summary = session.summary
+    const share = session.share
+    const worktree = session.worktree
+    const data = sessionIndexData(session)
+    const version = typeof session.version === "string" ? session.version : null
+    const createdAt = session.time?.created ?? null
+    const updatedAt = session.time?.updated ?? createdAt
+    const row: SessionIndexRecord = {
+      id: session.id,
+      projectID: session.projectID,
+      parentID: session.parentID ?? null,
+      title,
+      directory,
+      version,
+      created_at: createdAt,
+      updated_at: updatedAt,
+      archived_at: session.time?.archived ?? null,
+      additions: summary?.additions ?? 0,
+      deletions: summary?.deletions ?? 0,
+      files_changed: summary?.files ?? 0,
+      share_url: share?.url ?? null,
+      worktree_path: worktree?.path ?? null,
+      worktree_branch: worktree?.branch ?? null,
+      data: data ? JSON.stringify(data) : null,
+    }
+    return row
+  }
+
+  function writeSessionIndexWithDb(handle: Database, session: SessionIndexInput) {
+    const row = sessionIndexRow(session)
+    if (!row) return
+    handle.run(
+      `INSERT INTO session_index
+       (id, projectID, parentID, title, directory, version,
+        created_at, updated_at, archived_at,
+        additions, deletions, files_changed,
+        share_url, worktree_path, worktree_branch, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+        projectID = excluded.projectID,
+        parentID = excluded.parentID,
+        title = excluded.title,
+        directory = excluded.directory,
+        version = excluded.version,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        archived_at = excluded.archived_at,
+        additions = excluded.additions,
+        deletions = excluded.deletions,
+        files_changed = excluded.files_changed,
+        share_url = excluded.share_url,
+        worktree_path = excluded.worktree_path,
+        worktree_branch = excluded.worktree_branch,
+        data = excluded.data`,
+      [
+        row.id,
+        row.projectID,
+        row.parentID,
+        row.title,
+        row.directory,
+        row.version,
+        row.created_at,
+        row.updated_at,
+        row.archived_at,
+        row.additions,
+        row.deletions,
+        row.files_changed,
+        row.share_url,
+        row.worktree_path,
+        row.worktree_branch,
+        row.data,
+      ],
+    )
+  }
+
+  export function writeSessionIndex(session: SessionIndexInput) {
+    writeSessionIndexWithDb(db(), session)
+  }
+
+  export function readSessionIndexRow(id: string) {
+    ensureSessionIndex()
+    return db().query<SessionIndexRecord, [string]>("SELECT * FROM session_index WHERE id = ?").get(id)
+  }
+
   export function readSession(id: string) {
     const row = db().query<{ data: string }, [string]>("SELECT data FROM sessions WHERE id = ?").get(id)
     if (!row) return
@@ -110,12 +286,17 @@ export namespace StorageSqlite {
   }
 
   export function writeSession(input: SessionRecord) {
-    const created = input.time?.created ?? null
-    const updated = input.time?.updated ?? null
-    db().run(
-      "INSERT OR REPLACE INTO sessions (id, projectID, parentID, created_at, updated_at, data) VALUES (?, ?, ?, ?, ?, ?)",
-      [input.id, input.projectID, input.parentID ?? null, created, updated, JSON.stringify(input)],
-    )
+    const handle = db()
+    const insert = handle.transaction((payload: SessionRecord) => {
+      const createdAt = payload.time?.created ?? null
+      const updatedAt = payload.time?.updated ?? null
+      handle.run(
+        "INSERT OR REPLACE INTO sessions (id, projectID, parentID, created_at, updated_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+        [payload.id, payload.projectID, payload.parentID ?? null, createdAt, updatedAt, JSON.stringify(payload)],
+      )
+      writeSessionIndexWithDb(handle, payload)
+    })
+    insert(input)
   }
 
   export function listSessions(projectID: string) {
@@ -127,6 +308,90 @@ export namespace StorageSqlite {
 
   export function removeSession(id: string) {
     db().run("DELETE FROM sessions WHERE id = ?", [id])
+    db().run("DELETE FROM session_index WHERE id = ?", [id])
+  }
+
+  export type SessionIndexQuery = {
+    projectID: string
+    limit?: number
+    start?: number
+    afterID?: string
+    search?: string
+    directory?: string
+    includeArchived?: boolean
+  }
+
+  export function listSessionIndex(input: SessionIndexQuery) {
+    ensureSessionIndex()
+    const clauses = ["projectID = ?"] as string[]
+    const params = [input.projectID] as Array<string | number | null>
+
+    if (input.start !== undefined) {
+      clauses.push("updated_at >= ?")
+      params.push(input.start)
+    }
+    const afterID = input.afterID
+    if (afterID) {
+      const after = readSessionIndexRow(afterID)
+      if (after) {
+        const cursor = after.updated_at ?? after.created_at ?? 0
+        clauses.push("(COALESCE(updated_at, 0) < ? OR (COALESCE(updated_at, 0) = ? AND id < ?))")
+        params.push(cursor, cursor, after.id)
+      }
+    }
+    if (input.search) {
+      clauses.push("title LIKE ? COLLATE NOCASE")
+      params.push(`%${input.search}%`)
+    }
+    if (input.directory) {
+      clauses.push("directory = ?")
+      params.push(input.directory)
+    }
+    const includeArchived = input.includeArchived ?? true
+    if (!includeArchived) {
+      clauses.push("archived_at IS NULL")
+    }
+
+    const limit = input.limit
+    const suffix = limit !== undefined ? " LIMIT ?" : ""
+    if (limit !== undefined) params.push(limit)
+
+    const sql = `SELECT * FROM session_index WHERE ${clauses.join(
+      " AND ",
+    )} ORDER BY updated_at DESC, id DESC${suffix}`
+
+    return db().query<SessionIndexRecord, (string | number | null)[]>(sql).all(...params)
+  }
+
+  export function listSessionIndexChildren(parentID: string) {
+    ensureSessionIndex()
+    return db()
+      .query<SessionIndexRecord, [string]>(
+        "SELECT * FROM session_index WHERE parentID = ? ORDER BY updated_at DESC, id DESC",
+      )
+      .all(parentID)
+  }
+
+  export function ensureSessionIndex() {
+    const seeded = metaGet("session-index-seeded")
+    if (seeded) return
+    const rows = db().query<{ data: string }, []>("SELECT data FROM sessions").all()
+    for (const row of rows) {
+      const session = JSON.parse(row.data) as SessionIndexInput
+      writeSessionIndex(session)
+    }
+    metaSet("session-index-seeded", "1")
+  }
+
+  function messageInfoFromData(data: string) {
+    const parsed = JSON.parse(data) as unknown
+    if (!parsed || typeof parsed !== "object") return
+    const record = parsed as { info?: MessageRecord["info"] }
+    const info = record.info ?? (parsed as MessageRecord["info"])
+    if (!info) return
+    if (typeof info.id !== "string") return
+    if (typeof info.sessionID !== "string") return
+    return info
   }
 
   export function readMessage(sessionID: string, messageID: string) {
@@ -230,6 +495,74 @@ export namespace StorageSqlite {
       .query<{ id: string }, [string]>("SELECT id FROM messages WHERE sessionID = ? ORDER BY id DESC")
       .all(input.sessionID)
     return rows.map((row) => row.id)
+  }
+
+  export function listMessagesInfoPage(input: MessageListInput) {
+    const afterID = input.afterID
+    const limit = input.limit
+
+    const parseRows = (rows: Array<{ data: string }>) => {
+      const items: MessageWithParts[] = []
+      for (const row of rows) {
+        const info = messageInfoFromData(row.data)
+        if (!info) continue
+        items.push({ info, parts: [] })
+      }
+      return items
+    }
+
+    if (afterID && limit !== undefined) {
+      const rows = db()
+        .query<{ data: string }, [string, string, string, number]>(
+          `
+          SELECT data
+          FROM messages
+          WHERE sessionID = ? AND id IN (
+            SELECT id FROM messages WHERE sessionID = ? AND id < ? ORDER BY id DESC LIMIT ?
+          )
+          ORDER BY id DESC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, afterID, limit)
+      return parseRows(rows)
+    }
+
+    if (afterID) {
+      const rows = db()
+        .query<{ data: string }, [string, string, string]>(
+          `
+          SELECT data
+          FROM messages
+          WHERE sessionID = ? AND id IN (
+            SELECT id FROM messages WHERE sessionID = ? AND id < ? ORDER BY id DESC
+          )
+          ORDER BY id DESC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, afterID)
+      return parseRows(rows)
+    }
+
+    if (limit !== undefined) {
+      const rows = db()
+        .query<{ data: string }, [string, string, number]>(
+          `
+          SELECT data
+          FROM messages
+          WHERE sessionID = ? AND id IN (
+            SELECT id FROM messages WHERE sessionID = ? ORDER BY id DESC LIMIT ?
+          )
+          ORDER BY id DESC
+          `,
+        )
+        .all(input.sessionID, input.sessionID, limit)
+      return parseRows(rows)
+    }
+
+    const rows = db()
+      .query<{ data: string }, [string]>("SELECT data FROM messages WHERE sessionID = ? ORDER BY id DESC")
+      .all(input.sessionID)
+    return parseRows(rows)
   }
 
   export function listMessagesWithPartsPage(input: MessageListInput) {

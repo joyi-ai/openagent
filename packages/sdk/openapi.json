@@ -2300,7 +2300,8 @@
             "name": "directory",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Filter sessions by directory"
           },
           {
             "in": "query",
@@ -2309,6 +2310,15 @@
               "type": "number"
             },
             "description": "Filter sessions updated on or after this timestamp (milliseconds since epoch)"
+          },
+          {
+            "in": "query",
+            "name": "afterID",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "description": "Return sessions older than this session ID (uses last-updated ordering)"
           },
           {
             "in": "query",
@@ -3432,6 +3442,17 @@
             "schema": {
               "type": "string",
               "pattern": "^msg.*"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parts",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
             }
           }
         ],
@@ -9382,6 +9403,10 @@
           },
           "multiple": {
             "description": "Allow selecting multiple choices",
+            "type": "boolean"
+          },
+          "allowOther": {
+            "description": "Allow custom 'Other' response option (default: true)",
             "type": "boolean"
           }
         },

@@ -32,3 +32,34 @@ describe("StorageSqlite.listMessagesPage", () => {
     expect(StorageSqlite.countMessages(sessionID)).toBe(ids.length)
   })
 })
+
+describe("StorageSqlite.listSessionIndex", () => {
+  test("filters by directory", () => {
+    const projectID = `project_${Identifier.ascending("session")}`
+    const firstID = Identifier.ascending("session")
+    const secondID = Identifier.ascending("session")
+    const now = Date.now()
+    const later = now + 1
+
+    StorageSqlite.writeSession({
+      id: firstID,
+      projectID,
+      title: "First session",
+      directory: "/repo/a",
+      version: "v1",
+      time: { created: now, updated: now },
+    })
+    StorageSqlite.writeSession({
+      id: secondID,
+      projectID,
+      title: "Second session",
+      directory: "/repo/b",
+      version: "v1",
+      time: { created: later, updated: later },
+    })
+
+    const rows = StorageSqlite.listSessionIndex({ projectID, directory: "/repo/a" })
+    const ids = rows.map((row) => row.id)
+    expect(ids).toStrictEqual([firstID])
+  })
+})

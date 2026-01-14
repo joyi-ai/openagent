@@ -1,5 +1,4 @@
 import {
-  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -30,9 +29,9 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Mark } from "@opencode-ai/ui/logo"
 import { getFilename, truncateDirectoryPrefix } from "@opencode-ai/util/path"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
-import { createStore, produce, reconcile } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -49,7 +48,6 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { useMultiPane } from "@/context/multi-pane"
 import { Binary } from "@opencode-ai/util/binary"
-import { retry } from "@opencode-ai/util/retry"
 import { SDKProvider } from "@/context/sdk"
 import { LocalProvider } from "@/context/local"
 import { SyncProvider } from "@/context/sync"
@@ -330,265 +328,6 @@ export default function Layout(props: ParentProps) {
 
   const currentSessions = createMemo(() => projectSessions(currentProject()))
 
-  type PrefetchQueue = {
-    inflight: Set<string>
-    pending: string[]
-    pendingSet: Set<string>
-    running: number
-  }
-
-  type MessageWithParts = { info: Message; parts: Part[] }
-
-  type PreviewLine = { role: "user" | "assistant"; text: string }
-  type PreviewState =
-    | { status: "loading" }
-    | { status: "ready"; lines: PreviewLine[]; builtAt: number }
-    | { status: "error"; builtAt: number }
-
-  const previewTtl = 60_000
-  const [preview, setPreview] = createStore({
-    session: {} as Record<string, PreviewState>,
-  })
-
-  const previewKeyFor = (directory: string, sessionID: string) => `${normalizeDirectory(directory)}:${sessionID}`
-
-  const sanitizePreviewText = (text: string) =>
-    text
-      .replace(/\r\n/g, "\n")
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim()
-
-  const truncatePreviewText = (text: string, max: number) => {
-    if (text.length <= max) return text
-    return `${text.slice(0, max - 1)}…`
-  }
-
-  const extractPreviewText = (parts: Part[]) => {
-    for (const part of parts) {
-      if (part.type !== "text") continue
-      if (part.ignored) continue
-      if (part.synthetic) continue
-      const cleaned = sanitizePreviewText(part.text)
-      if (!cleaned) continue
-      return cleaned
-    }
-  }
-
-  const buildPreviewLines = (items: MessageWithParts[]) => {
-    const sorted = items
-      .filter((x) => !!x?.info?.id)
-      .slice()
-      .sort((a, b) => a.info.id.localeCompare(b.info.id))
-
-    const lines: PreviewLine[] = []
-    for (const item of sorted.slice().reverse()) {
-      const role = item.info.role
-      if (role !== "user" && role !== "assistant") continue
-      const text = extractPreviewText(item.parts)
-      if (!text) continue
-      const next: PreviewLine = { role, text: truncatePreviewText(text, 200) }
-      lines.unshift(next)
-      if (lines.length >= 2) break
-    }
-    return lines
-  }
-
-  const hoverPrefetch = {
-    timer: undefined as ReturnType<typeof setTimeout> | undefined,
-    key: undefined as string | undefined,
-  }
-  onCleanup(() => {
-    if (!hoverPrefetch.timer) return
-    clearTimeout(hoverPrefetch.timer)
-  })
-  createEffect(() => {
-    globalSDK.url
-    setPreview("session", {})
-  })
-
-  const prefetchChunk = 50
-  const prefetchConcurrency = 1
-  const prefetchPendingLimit = 6
-  const prefetchToken = { value: 0 }
-  const prefetchQueues = new Map<string, PrefetchQueue>()
-
-  createEffect(() => {
-    params.dir
-    globalSDK.url
-
-    prefetchToken.value += 1
-    for (const q of prefetchQueues.values()) {
-      q.pending.length = 0
-      q.pendingSet.clear()
-    }
-  })
-
-  const queueFor = (directory: string) => {
-    const existing = prefetchQueues.get(directory)
-    if (existing) return existing
-
-    const created: PrefetchQueue = {
-      inflight: new Set(),
-      pending: [],
-      pendingSet: new Set(),
-      running: 0,
-    }
-    prefetchQueues.set(directory, created)
-    return created
-  }
-
-  const prefetchMessages = (directory: string, sessionID: string, token: number) => {
-    const [store, setStore] = globalSync.child(directory)
-    const key = previewKeyFor(directory, sessionID)
-
-    return retry(() => globalSDK.client.session.messages({ directory, sessionID, limit: prefetchChunk }))
-      .then((messages) => {
-        if (prefetchToken.value !== token) return
-
-        const items = (messages.data ?? []).filter((x) => !!x?.info?.id) as MessageWithParts[]
-        const next = items
-          .map((x) => x.info)
-          .filter((m) => !!m?.id)
-          .slice()
-          .sort((a, b) => a.id.localeCompare(b.id))
-        const lines = buildPreviewLines(items)
-
-        batch(() => {
-          if (store.message[sessionID] === undefined) {
-            setStore("message", sessionID, reconcile(next, { key: "id" }))
-          }
-          for (const message of items) {
-            const messageId = message.info.id
-            if (!messageId) continue
-            if (store.part[messageId] !== undefined) continue
-            const parts = (message.parts ?? [])
-              .filter((p) => !!p?.id)
-              .slice()
-              .sort((a, b) => a.id.localeCompare(b.id))
-            if (parts.length === 0) continue
-            setStore("part", messageId, reconcile(parts, { key: "id" }))
-          }
-          setPreview("session", key, { status: "ready", lines, builtAt: Date.now() })
-        })
-      })
-      .catch(() => {
-        setPreview("session", key, { status: "error", builtAt: Date.now() })
-      })
-  }
-
-  const pumpPrefetch = (directory: string) => {
-    const q = queueFor(directory)
-    if (q.running >= prefetchConcurrency) return
-
-    const sessionID = q.pending.shift()
-    if (!sessionID) return
-
-    q.pendingSet.delete(sessionID)
-    q.inflight.add(sessionID)
-    q.running += 1
-
-    const token = prefetchToken.value
-
-    void prefetchMessages(directory, sessionID, token).finally(() => {
-      q.running -= 1
-      q.inflight.delete(sessionID)
-      pumpPrefetch(directory)
-    })
-  }
-
-  const prefetchSession = (session: Session, priority: "high" | "low" = "low", directoryOverride?: string) => {
-    const directory = directoryOverride ?? session.directory
-    if (!directory) return
-
-    const key = previewKeyFor(directory, session.id)
-    const cached = preview.session[key]
-    if (cached?.status === "ready") {
-      const age = Date.now() - cached.builtAt
-      if (age < previewTtl) return
-    }
-
-    const q = queueFor(directory)
-    if (q.inflight.has(session.id)) return
-    if (q.pendingSet.has(session.id)) return
-
-    setPreview("session", key, { status: "loading" })
-
-    if (priority === "high") q.pending.unshift(session.id)
-    if (priority !== "high") q.pending.push(session.id)
-    q.pendingSet.add(session.id)
-
-    while (q.pending.length > prefetchPendingLimit) {
-      const dropped = q.pending.pop()
-      if (!dropped) continue
-      q.pendingSet.delete(dropped)
-    }
-
-    pumpPrefetch(directory)
-  }
-
-  const scheduleHoverPrefetch = (session: Session, directoryOverride?: string) => {
-    const directory = directoryOverride ?? session.directory
-    if (!directory) return
-
-    const key = previewKeyFor(directory, session.id)
-    hoverPrefetch.key = key
-
-    if (hoverPrefetch.timer) clearTimeout(hoverPrefetch.timer)
-
-    const cached = preview.session[key]
-    if (cached?.status === "ready") {
-      const age = Date.now() - cached.builtAt
-      if (age < previewTtl) return
-    }
-
-    setPreview("session", key, { status: "loading" })
-
-    hoverPrefetch.timer = setTimeout(() => {
-      if (hoverPrefetch.key !== key) return
-      prefetchSession(session, "high", directory)
-    }, 150)
-  }
-
-  const cancelHoverPrefetch = (session: Session, directoryOverride?: string) => {
-    const directory = directoryOverride ?? session.directory
-    if (!directory) return
-
-    const key = previewKeyFor(directory, session.id)
-    if (hoverPrefetch.key !== key) return
-    hoverPrefetch.key = undefined
-
-    if (!hoverPrefetch.timer) return
-    clearTimeout(hoverPrefetch.timer)
-    hoverPrefetch.timer = undefined
-  }
-
-  createEffect(() => {
-    const sessions = currentSessions()
-    const id = params.id
-
-    if (!id) {
-      const first = sessions[0]
-      if (first) prefetchSession(first)
-
-      const second = sessions[1]
-      if (second) prefetchSession(second)
-      return
-    }
-
-    const index = sessions.findIndex((s) => s.id === id)
-    if (index === -1) return
-
-    const next = sessions[index + 1]
-    if (next) prefetchSession(next)
-
-    const prev = sessions[index - 1]
-    if (prev) prefetchSession(prev)
-  })
-
   function navigateSessionByOffset(offset: number) {
     const projects = layout.projects.list()
     if (projects.length === 0) return
@@ -614,18 +353,6 @@ export default function Layout(props: ParentProps) {
 
     if (targetIndex >= 0 && targetIndex < sessions.length) {
       const session = sessions[targetIndex]
-      const next = sessions[targetIndex + 1]
-      const prev = sessions[targetIndex - 1]
-
-      if (offset > 0) {
-        if (next) prefetchSession(next, "high")
-        if (prev) prefetchSession(prev)
-      }
-
-      if (offset < 0) {
-        if (prev) prefetchSession(prev, "high")
-        if (next) prefetchSession(next)
-      }
 
       if (import.meta.env.DEV) {
         navStart({
@@ -652,16 +379,6 @@ export default function Layout(props: ParentProps) {
 
     const index = offset > 0 ? 0 : nextProjectSessions.length - 1
     const targetSession = nextProjectSessions[index]
-    const nextSession = nextProjectSessions[index + 1]
-    const prevSession = nextProjectSessions[index - 1]
-
-    if (offset > 0) {
-      if (nextSession) prefetchSession(nextSession, "high")
-    }
-
-    if (offset < 0) {
-      if (prevSession) prefetchSession(prevSession, "high")
-    }
 
     if (import.meta.env.DEV) {
       navStart({
@@ -1095,14 +812,6 @@ export default function Layout(props: ParentProps) {
       return true
     })
     const sessionHref = createMemo(() => `/${base64Encode(sessionDirectory())}/session/${props.session.id}`)
-    const previewKey = createMemo(() => previewKeyFor(sessionDirectory(), props.session.id))
-    const previewState = createMemo(() => preview.session[previewKey()])
-    const previewLines = createMemo(() => {
-      const state = previewState()
-      if (!state) return []
-      if (state.status !== "ready") return []
-      return state.lines
-    })
 
     return (
       <>
@@ -1115,51 +824,11 @@ export default function Layout(props: ParentProps) {
             "bg-surface-raised-base-hover": isActive(),
           }}
         >
-          <Tooltip
-            placement={props.mobile ? "bottom" : "right"}
-            value={
-              props.mobile ? (
-                props.session.title
-              ) : (
-                <div class="flex flex-col gap-1 min-w-0 max-w-[320px]">
-                  <div class="text-12-medium">{props.session.title}</div>
-                  <Switch>
-                    <Match when={previewState()?.status === "error"}>
-                      <div class="text-12-regular opacity-70">Preview unavailable</div>
-                    </Match>
-                    <Match when={previewState()?.status === "ready"}>
-                      <Show
-                        when={previewLines().length > 0}
-                        fallback={<div class="text-12-regular opacity-70">No messages yet</div>}
-                      >
-                        <For each={previewLines()}>
-                          {(line) => (
-                            <div class="flex gap-2 min-w-0">
-                              <span class="shrink-0 text-12-medium opacity-60">
-                                {line.role === "user" ? "You" : "Assistant"}:
-                              </span>
-                              <span class="min-w-0 text-12-regular truncate">{line.text}</span>
-                            </div>
-                          )}
-                        </For>
-                      </Show>
-                    </Match>
-                    <Match when={true}>
-                      <div class="text-12-regular opacity-70">Loading preview…</div>
-                    </Match>
-                  </Switch>
-                </div>
-              )
-            }
-            gutter={10}
-          >
+          <Tooltip placement={props.mobile ? "bottom" : "right"} value={props.session.title} gutter={10}>
             <A
               href={sessionHref()}
               class="flex flex-col min-w-0 text-left w-full focus:outline-none"
               activeClass=""
-              onMouseEnter={() => scheduleHoverPrefetch(props.session, sessionDirectory())}
-              onMouseLeave={() => cancelHoverPrefetch(props.session, sessionDirectory())}
-              onFocus={() => prefetchSession(props.session, "high", sessionDirectory())}
             >
               <div class="flex items-center self-stretch gap-6 justify-between transition-[padding] group-hover/session:pr-7 group-focus-within/session:pr-7 group-active/session:pr-7">
                 <span

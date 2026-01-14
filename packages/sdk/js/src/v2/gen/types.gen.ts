@@ -576,6 +576,10 @@ export type QuestionInfo = {
    * Allow selecting multiple choices
    */
   multiple?: boolean
+  /**
+   * Allow custom 'Other' response option (default: true)
+   */
+  allowOther?: boolean
 }
 
 export type QuestionRequest = {
@@ -3366,11 +3370,18 @@ export type SessionListData = {
   body?: never
   path?: never
   query?: {
+    /**
+     * Filter sessions by directory
+     */
     directory?: string
     /**
      * Filter sessions updated on or after this timestamp (milliseconds since epoch)
      */
     start?: number
+    /**
+     * Return sessions older than this session ID (uses last-updated ordering)
+     */
+    afterID?: string
     /**
      * Filter sessions by title (case-insensitive)
      */
@@ -3872,6 +3883,7 @@ export type SessionMessagesData = {
     directory?: string
     limit?: number
     afterID?: string
+    parts?: "true" | "false"
   }
   url: "/session/{sessionID}/message"
 }

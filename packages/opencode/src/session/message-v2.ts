@@ -856,6 +856,19 @@ export namespace MessageV2 {
       messageInfoCache.set(key, info)
     }
 
+    function resolveMessageInfo(sessionID: string, messageID: string) {
+      const key = getCacheKey(sessionID, messageID)
+      const cached = messageInfoCache.get(key)
+      if (cached) return cached
+      const stored = StorageSqlite.readMessage(sessionID, messageID)
+      if (!stored) return
+      const record = stored as { info?: Info }
+      const info = record.info ?? (stored as Info)
+      if (!info) return
+      messageInfoCache.set(key, info)
+      return info
+    }
+
     function buildEntry(parts: Part[]): CacheEntry {
       const list = parts.slice().sort((a, b) => (a.id > b.id ? 1 : -1))
       const index = new Map<string, number>()

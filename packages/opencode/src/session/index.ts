@@ -30,7 +30,9 @@ export namespace Session {
   /**
    * Convert a cache row to Session.Info
    */
-  export function fromCacheRow(row: Cache.SessionRow | null): Session.Info | null {
+  type SessionRow = Cache.SessionRow | StorageSqlite.SessionIndexRow
+
+  export function fromCacheRow(row: SessionRow | null): Session.Info | null {
     if (!row) return null
     const data = row.data
       ? (JSON.parse(row.data) as {
@@ -471,8 +473,23 @@ export namespace Session {
       sessionID: Identifier.schema("session"),
       limit: z.number().optional(),
       afterID: Identifier.schema("message").optional(), // Only load messages older than this ID
+      parts: z.boolean().optional(),
     }),
     async (input) => {
+      const includeParts = input.parts !== false
+      if (!includeParts) {
+        const page = StorageSqlite.listMessagesInfoPage({
+          sessionID: input.sessionID,
+          limit: input.limit,
+          afterID: input.afterID,
+        })
+        const messages = page.map((item) => ({
+          info: item.info as MessageV2.Info,
+          parts: item.parts as MessageV2.Part[],
+        }))
+        messages.sort((a, b) => a.info.id.localeCompare(b.info.id))
+        return messages
+      }
       const page = StorageSqlite.listMessagesWithPartsPage({
         sessionID: input.sessionID,
         limit: input.limit,
@@ -508,16 +525,16 @@ export namespace Session {
 
   export async function* list() {
     const project = Instance.project
-    const cached = Cache.Session.list(project.id)
-    for (const row of cached) {
+    const rows = StorageSqlite.listSessionIndex({ projectID: project.id })
+    for (const row of rows) {
       const session = fromCacheRow(row)
       if (session) yield session
     }
   }
 
   export const children = fn(Identifier.schema("session"), async (parentID) => {
-    const cached = Cache.Session.children(parentID)
-    return cached.map(fromCacheRow).filter((s): s is Session.Info => s !== null)
+    const rows = StorageSqlite.listSessionIndexChildren(parentID)
+    return rows.map(fromCacheRow).filter((s): s is Session.Info => s !== null)
   })
 
   export const remove = fn(
