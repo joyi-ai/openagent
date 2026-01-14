@@ -43,6 +43,7 @@ function pruneNotifications(list: Notification[]) {
 
 export const { use: useNotification, provider: NotificationProvider } = createSimpleContext({
   name: "Notification",
+  gate: false, // Don't gate rendering on ready - let components handle loading state
   init: () => {
     let idlePlayer: ReturnType<typeof makeAudioPlayer> | undefined
     let errorPlayer: ReturnType<typeof makeAudioPlayer> | undefined

@@ -9,6 +9,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
+  gate: false, // Don't gate rendering on ready - let components handle loading state
   init: () => {
     const globalSync = useGlobalSync()
     const sdk = useSDK()

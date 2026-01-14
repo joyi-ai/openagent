@@ -43,6 +43,7 @@ export type ReviewDiffStyle = "unified" | "split"
 
 export const { use: useLayout, provider: LayoutProvider } = createSimpleContext({
   name: "Layout",
+  gate: false, // Don't gate rendering on ready - let components handle loading state
   init: () => {
     const globalSdk = useGlobalSDK()
     const globalSync = useGlobalSync()

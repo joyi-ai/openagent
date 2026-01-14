@@ -31,6 +31,7 @@ function projectsKey(url: string) {
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
+  gate: false, // Don't gate rendering on ready - ServerKey handles URL gating
   init: (props: { defaultUrl: string }) => {
     const platform = usePlatform()
 

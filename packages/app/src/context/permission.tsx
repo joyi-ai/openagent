@@ -47,6 +47,7 @@ function hasAutoAcceptPermissionConfig(permission: unknown) {
 
 export const { use: usePermission, provider: PermissionProvider } = createSimpleContext({
   name: "Permission",
+  gate: false, // Don't gate rendering on ready - let components handle loading state
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()

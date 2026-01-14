@@ -29,7 +29,8 @@ import { OnboardingProvider, Onboarding } from "@/components/onboarding"
 
 const Home = lazy(() => import("@/pages/home"))
 const Marketplace = lazy(() => import("@/pages/marketplace"))
-const Session = lazy(() => import("@/pages/session"))
+// Session is eagerly loaded to avoid flash on first session navigation
+import Session from "@/pages/session"
 const Loading = () => <div class="size-full flex items-center justify-center text-text-weak">Loading...</div>
 
 export { PlatformProvider, type Platform } from "@/context/platform"
@@ -139,14 +140,7 @@ export function AppInterface() {
                 />
                 <Route path="/:dir" component={DirectoryLayout}>
                   <Route path="/" component={() => <Navigate href="session" />} />
-                  <Route
-                    path="/session/:id?"
-                    component={() => (
-                      <Suspense fallback={<Loading />}>
-                        <Session />
-                      </Suspense>
-                    )}
-                  />
+                  <Route path="/session/:id?" component={Session} />
                 </Route>
               </Router>
             </MultiPaneProvider>
