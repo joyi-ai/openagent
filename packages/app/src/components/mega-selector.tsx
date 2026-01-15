@@ -93,6 +93,11 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
   const [selectedProvider, setSelectedProvider] = createSignal<string | undefined>(undefined)
   const [showProviderFilter, setShowProviderFilter] = createSignal(false)
 
+  // Hover expansion state for Model column
+  const [isModelExpanded, setIsModelExpanded] = createSignal(false)
+  const [expandDirection, setExpandDirection] = createSignal<"up" | "down">("down")
+  let modelColumnRef: HTMLDivElement | undefined
+
   // For floating mode, use floatingSelector state
   const isOpen = () => (props.floating ? floatingSelector.isOpen() : open())
   const handleClose = () => {
@@ -101,6 +106,26 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
     } else {
       setOpen(false)
     }
+  }
+
+  const handleModelHover = () => {
+    if (isModelExpanded()) return
+    const rect = modelColumnRef?.getBoundingClientRect()
+    if (!rect) return
+
+    const spaceBelow = window.innerHeight - rect.bottom
+    const spaceAbove = rect.top
+    const expandedHeight = 500
+    const baseHeight = 256 // Approximate base height
+
+    // Expand up if tight below and spacious above
+    // Add some buffer (20px) to spaceBelow check
+    if (spaceBelow < (expandedHeight - baseHeight + 20) && spaceAbove > spaceBelow) {
+      setExpandDirection("up")
+    } else {
+      setExpandDirection("down")
+    }
+    setIsModelExpanded(true)
   }
 
   const currentMode = createMemo(() => local.mode.current())
@@ -270,7 +295,7 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
     return {
       position: "fixed" as const,
       left: `${pos.x}px`,
-      top: `${pos.y}px`,
+      top: `${pos.y - 16}px`,
       transform: "translate(-50%, -100%)",
       "z-index": "9999",
     }
@@ -297,6 +322,16 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                             "opacity-70": missing().length > 0,
                           }}
                           onClick={() => handleModeSelect(mode)}
+                          onMouseEnter={() => {
+                            if (props.floating && floatingSelector.isHoldDragMode()) {
+                              floatingSelector.setHoveredAction(() => handleModeSelect(mode))
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            if (props.floating && floatingSelector.isHoldDragMode()) {
+                              floatingSelector.setHoveredAction(null)
+                            }
+                          }}
                         >
                           <span
                             class="flex-1 text-13-medium truncate"
@@ -335,6 +370,16 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                         class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover text-left"
                         classList={{ "bg-surface-info-base dark:bg-blue-500/40": isCurrent() }}
                         onClick={() => local.agent.set(agent.name)}
+                        onMouseEnter={() => {
+                          if (props.floating && floatingSelector.isHoldDragMode()) {
+                            floatingSelector.setHoveredAction(() => local.agent.set(agent.name))
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (props.floating && floatingSelector.isHoldDragMode()) {
+                            floatingSelector.setHoveredAction(null)
+                          }
+                        }}
                       >
                         <span
                           class="flex-1 text-13-medium capitalize truncate"
@@ -353,7 +398,25 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
             </div>
 
             {/* MODEL COLUMN */}
-            <div class="flex flex-col p-2 border-r border-border-base w-[240px] shrink-0">
+            <div
+              ref={(el) => (modelColumnRef = el)}
+              class="relative border-r border-border-base w-[240px] shrink-0"
+              onMouseEnter={handleModelHover}
+              onMouseLeave={() => setIsModelExpanded(false)}
+            >
+              <div
+                class="flex flex-col p-2 bg-surface-raised-stronger-non-alpha transition-all duration-200 ease-out"
+                classList={{
+                  "absolute left-0 z-50 shadow-xl rounded-md": isModelExpanded(),
+                  "relative h-full": !isModelExpanded(),
+                }}
+                style={{
+                  width: "240px",
+                  height: isModelExpanded() ? "500px" : "100%",
+                  top: isModelExpanded() && expandDirection() === "down" ? "0" : (isModelExpanded() ? "auto" : "0"),
+                  bottom: isModelExpanded() && expandDirection() === "up" ? "0" : "auto",
+                }}
+              >
               {/* Header: MODEL text or search input */}
               <Show
                 when={isOpencodeMode()}
@@ -473,6 +536,18 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                               onClick={() => {
                                 local.model.set({ modelID: model.id, providerID: model.provider.id }, { recent: true })
                               }}
+                              onMouseEnter={() => {
+                                if (props.floating && floatingSelector.isHoldDragMode()) {
+                                  floatingSelector.setHoveredAction(() =>
+                                    local.model.set({ modelID: model.id, providerID: model.provider.id }, { recent: true })
+                                  )
+                                }
+                              }}
+                              onMouseLeave={() => {
+                                if (props.floating && floatingSelector.isHoldDragMode()) {
+                                  floatingSelector.setHoveredAction(null)
+                                }
+                              }}
                             >
                               <span
                                 class="flex-1 text-13-regular truncate"
@@ -537,6 +612,21 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                                         { recent: true },
                                       )
                                     }}
+                                    onMouseEnter={() => {
+                                      if (props.floating && floatingSelector.isHoldDragMode()) {
+                                        floatingSelector.setHoveredAction(() =>
+                                          local.model.set(
+                                            { modelID: model.id, providerID: model.provider.id },
+                                            { recent: true },
+                                          )
+                                        )
+                                      }
+                                    }}
+                                    onMouseLeave={() => {
+                                      if (props.floating && floatingSelector.isHoldDragMode()) {
+                                        floatingSelector.setHoveredAction(null)
+                                      }
+                                    }}
                                   >
                                     <Show when={showProviderIcon}>
                                       <ProviderIcon
@@ -599,6 +689,7 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                   <div class="px-2 py-3 text-12-regular text-text-weak text-center">No models found</div>
                 </Show>
               </div>
+             </div>
             </div>
 
             {/* OPTIONS COLUMN (Variant + Extended Thinking) */}
@@ -619,6 +710,16 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                           "text-text-strong": currentVariant() !== undefined,
                         }}
                         onClick={() => local.model.variant.set(undefined)}
+                        onMouseEnter={() => {
+                          if (props.floating && floatingSelector.isHoldDragMode()) {
+                            floatingSelector.setHoveredAction(() => local.model.variant.set(undefined))
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (props.floating && floatingSelector.isHoldDragMode()) {
+                            floatingSelector.setHoveredAction(null)
+                          }
+                        }}
                       >
                         Default
                       </button>
@@ -633,6 +734,16 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
                               "text-text-strong": currentVariant() !== variant,
                             }}
                             onClick={() => local.model.variant.set(variant)}
+                            onMouseEnter={() => {
+                              if (props.floating && floatingSelector.isHoldDragMode()) {
+                                floatingSelector.setHoveredAction(() => local.model.variant.set(variant))
+                              }
+                            }}
+                            onMouseLeave={() => {
+                              if (props.floating && floatingSelector.isHoldDragMode()) {
+                                floatingSelector.setHoveredAction(null)
+                              }
+                            }}
                           >
                             {variant}
                           </button>
@@ -673,8 +784,9 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
             style={floatingPositionStyle()}
             class="animate-in fade-in zoom-in-95 duration-150"
             onMouseDown={preventFocus}
+            onContextMenu={(e) => e.preventDefault()}
           >
-            <div class="w-[690px] h-64 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-lg overflow-hidden">
+            <div class="w-[690px] h-64 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-lg">
               <ContentPanel />
             </div>
           </div>
@@ -695,7 +807,7 @@ export const MegaSelector: Component<{ class?: string; floating?: boolean }> = (
         </Button>
       </Kobalte.Trigger>
       <Kobalte.Portal>
-        <Kobalte.Content class="w-[690px] h-64 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden">
+        <Kobalte.Content class="w-[690px] h-64 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none" onContextMenu={(e) => e.preventDefault()}>
           <Kobalte.Title class="sr-only">Mode, Agent, and Model settings</Kobalte.Title>
           <ContentPanel />
         </Kobalte.Content>
