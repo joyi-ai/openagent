@@ -98,6 +98,17 @@ export default function Layout(props: ParentProps) {
                 return response.json()
               }
 
+              if (input.reject) {
+                const response = await fetch(`${globalSDK.url}/askuser/${input.requestID}/cancel`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-opencode-directory": directory(),
+                  },
+                })
+                return response.json()
+              }
+
               const response = await fetch(`${globalSDK.url}/askuser/${input.requestID}/reply`, {
                 method: "POST",
                 headers: {

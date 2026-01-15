@@ -653,6 +653,9 @@ function createGlobalSync() {
     } else if (eventType === "askuser.replied") {
       const props = (event as unknown as { properties: { sessionID: string; requestID: string } }).properties
       removeAskUserRequest(props.sessionID, props.requestID)
+    } else if (eventType === "askuser.cancelled") {
+      const props = (event as unknown as { properties: { sessionID: string; requestID: string } }).properties
+      removeAskUserRequest(props.sessionID, props.requestID)
     } else if (eventType === "planmode.review") {
       const props = (event as unknown as { properties: PlanModeRequest }).properties
       const sessionID = props.sessionID

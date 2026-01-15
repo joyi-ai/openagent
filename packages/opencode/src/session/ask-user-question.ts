@@ -39,6 +39,7 @@ export namespace AskUserQuestion {
   export const Event = {
     Asked: BusEvent.define("askuser.asked", Request),
     Replied: BusEvent.define("askuser.replied", Response),
+    Cancelled: BusEvent.define("askuser.cancelled", z.object({ requestID: z.string(), sessionID: z.string() })),
   }
 
   interface PendingQuestion {
@@ -109,7 +110,8 @@ export namespace AskUserQuestion {
 
     log.info("cancelling ask user question", { requestID })
     pending.delete(requestID)
-    pendingQuestion.reject(new Error("Question cancelled"))
+    Bus.publish(Event.Cancelled, { requestID, sessionID: pendingQuestion.info.sessionID })
+    pendingQuestion.reject(new Error("The user dismissed this question"))
     return true
   }
 

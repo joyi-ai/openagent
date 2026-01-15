@@ -185,7 +185,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
 
   const currentQuestion = () => questions()[currentIndex()]
   const hasMultipleQuestions = () => questions().length > 1
-  const canDismiss = () => pendingRequest()?.source === "question"
+  const canDismiss = () => !!pendingRequest()?.source
 
   const hasAnswer = (index: number) => {
     const hasSelected = (selections()[index] ?? []).length > 0

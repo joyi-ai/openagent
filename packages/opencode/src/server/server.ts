@@ -2338,6 +2338,39 @@ export namespace Server {
             return c.json(true)
           },
         )
+        .post(
+          "/askuser/:requestID/cancel",
+          describeRoute({
+            summary: "Cancel AskUserQuestion",
+            description: "Cancel a pending AskUserQuestion request (dismiss).",
+            operationId: "askuser.cancel",
+            responses: {
+              200: {
+                description: "Question cancelled successfully",
+                content: {
+                  "application/json": {
+                    schema: resolver(z.boolean()),
+                  },
+                },
+              },
+              ...errors(400, 404),
+            },
+          }),
+          validator(
+            "param",
+            z.object({
+              requestID: z.string(),
+            }),
+          ),
+          async (c) => {
+            const params = c.req.valid("param")
+            const success = AskUserQuestion.cancel(params.requestID)
+            if (!success) {
+              return c.json({ error: "Request not found" }, 404)
+            }
+            return c.json(true)
+          },
+        )
         .get(
           "/askuser",
           describeRoute({
