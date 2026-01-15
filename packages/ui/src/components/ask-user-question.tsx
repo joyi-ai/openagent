@@ -47,8 +47,10 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   const [otherSelected, setOtherSelected] = createSignal<Record<number, boolean>>({})
   // Track submission state
   const [isSubmitting, setIsSubmitting] = createSignal(false)
+  const [isRejecting, setIsRejecting] = createSignal(false)
   // Track current question index for tabs
   const [currentIndex, setCurrentIndex] = createSignal(0)
+  const isBusy = () => isSubmitting() || isRejecting()
 
   // Don't render if already completed
   if (props.status === "completed" && props.output) {
@@ -56,7 +58,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   }
 
   const toggleOption = (questionIndex: number, optionLabel: string, multiSelect: boolean) => {
-    if (isSubmitting()) return
+    if (isBusy()) return
 
     // If selecting a predefined option, deselect "Other" in single-select mode
     if (!multiSelect) {
@@ -77,7 +79,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
   }
 
   const toggleOther = (questionIndex: number, multiSelect: boolean) => {
-    if (isSubmitting()) return
+    if (isBusy()) return
 
     const isCurrentlySelected = otherSelected()[questionIndex] ?? false
 
@@ -109,7 +111,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
 
   const handleSubmit = async () => {
     const request = pendingRequest()
-    if (!request || !data.respondToAskUser || isSubmitting() || !hasSelections()) return
+    if (!request || !data.respondToAskUser || isBusy() || !hasSelections()) return
 
     setIsSubmitting(true)
 
@@ -143,6 +145,24 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
     }
   }
 
+  const handleReject = async () => {
+    const request = pendingRequest()
+    if (!request || !data.respondToAskUser || isBusy()) return
+
+    setIsRejecting(true)
+    try {
+      await data.respondToAskUser({
+        requestID: request.id,
+        sessionID: props.sessionID,
+        answers: {},
+        source: request.source,
+        reject: true,
+      })
+    } finally {
+      setIsRejecting(false)
+    }
+  }
+
   const hasSelections = () => {
     return questions().some((_, i) => {
       const hasSelected = (selections()[i] ?? []).length > 0
@@ -165,6 +185,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
 
   const currentQuestion = () => questions()[currentIndex()]
   const hasMultipleQuestions = () => questions().length > 1
+  const canDismiss = () => pendingRequest()?.source === "question"
 
   const hasAnswer = (index: number) => {
     const hasSelected = (selections()[index] ?? []).length > 0
@@ -209,7 +230,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
                   type="button"
                   data-component="ask-user-chip"
                   data-selected={isSelected(currentIndex(), option.label)}
-                  data-disabled={isSubmitting()}
+                  data-disabled={isBusy()}
                   onClick={() => toggleOption(currentIndex(), option.label, currentQuestion().multiSelect)}
                 >
                   <div data-slot="ask-user-chip-content">
@@ -245,7 +266,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
                     placeholder="Enter your response..."
                     value={getCustomInput(currentIndex())}
                     onInput={(e) => updateCustomInput(currentIndex(), e.currentTarget.value)}
-                    disabled={isSubmitting()}
+                    disabled={isBusy()}
                   />
                 </Show>
               </div>
@@ -263,7 +284,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
               data-slot="ask-user-nav-btn"
               data-direction="prev"
               onClick={goToPrev}
-              disabled={currentIndex() === 0}
+              disabled={isBusy() || currentIndex() === 0}
             >
               <Icon name="chevron-right" size="small" />
             </button>
@@ -274,11 +295,25 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
               type="button"
               data-slot="ask-user-nav-btn"
               onClick={goToNext}
-              disabled={currentIndex() === questions().length - 1}
+              disabled={isBusy() || currentIndex() === questions().length - 1}
             >
               <Icon name="chevron-right" size="small" />
             </button>
           </div>
+        </Show>
+        <Show when={canDismiss()}>
+          <button
+            type="button"
+            data-slot="ask-user-dismiss-btn"
+            data-submitting={isRejecting()}
+            onClick={handleReject}
+            disabled={isBusy()}
+          >
+            <Show when={isRejecting()}>
+              <Spinner />
+            </Show>
+            {isRejecting() ? "Dismissing..." : "Dismiss"}
+          </button>
         </Show>
         <button
           type="button"
@@ -286,7 +321,7 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
           data-ready={hasSelections()}
           data-submitting={isSubmitting()}
           onClick={handleSubmit}
-          disabled={isSubmitting() || !hasSelections()}
+          disabled={isBusy() || !hasSelections()}
         >
           <Show when={isSubmitting()}>
             <Spinner />

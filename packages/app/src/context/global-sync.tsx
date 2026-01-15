@@ -60,6 +60,23 @@ export type PlanModeRequest = {
   plan: string
 }
 
+const mapQuestionRequest = (request: QuestionRequest): AskUserQuestionRequest => {
+  return {
+    id: request.id,
+    sessionID: request.sessionID,
+    messageID: request.tool?.messageID ?? "",
+    callID: request.tool?.callID ?? request.id,
+    source: "question",
+    questions: request.questions.map((question) => ({
+      question: question.question,
+      header: question.header,
+      options: question.options,
+      multiSelect: question.multiple ?? false,
+      allowOther: question.allowOther,
+    })),
+  }
+}
+
 type State = {
   status: "loading" | "partial" | "complete"
   agent: Agent[]
@@ -329,6 +346,33 @@ function createGlobalSync() {
           }
         })
       }),
+      sdk.question.list().then((x) => {
+        const grouped: Record<string, AskUserQuestionRequest[]> = {}
+        for (const question of x.data ?? []) {
+          if (!question?.id || !question.sessionID) continue
+          const mapped = mapQuestionRequest(question)
+          const existing = grouped[mapped.sessionID]
+          if (existing) {
+            existing.push(mapped)
+            continue
+          }
+          grouped[mapped.sessionID] = [mapped]
+        }
+
+        batch(() => {
+          const sessionIDs = new Set([...Object.keys(store.askuser), ...Object.keys(grouped)])
+          for (const sessionID of sessionIDs) {
+            const existing = store.askuser[sessionID] ?? []
+            const keepAskUser = existing.filter((req) => req.source !== "question")
+            const questions = (grouped[sessionID] ?? [])
+              .filter((q) => !!q?.id)
+              .slice()
+              .sort((a, b) => a.id.localeCompare(b.id))
+            const merged = [...keepAskUser, ...questions].sort((a, b) => a.id.localeCompare(b.id))
+            setStore("askuser", sessionID, reconcile(merged, { key: "id" }))
+          }
+        })
+      }),
     ])
       .then(() => {
         setStore("status", "complete")
@@ -403,22 +447,6 @@ function createGlobalSync() {
           draft.splice(result.index, 1)
         }),
       )
-    }
-    const mapQuestionRequest = (request: QuestionRequest): AskUserQuestionRequest => {
-      return {
-        id: request.id,
-        sessionID: request.sessionID,
-        messageID: request.tool?.messageID ?? "",
-        callID: request.tool?.callID ?? request.id,
-        source: "question",
-        questions: request.questions.map((question) => ({
-          question: question.question,
-          header: question.header,
-          options: question.options,
-          multiSelect: question.multiple ?? false,
-          allowOther: question.allowOther,
-        })),
-      }
     }
     switch (event.type) {
       case "server.instance.disposed": {

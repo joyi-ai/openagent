@@ -69,6 +69,7 @@ export default function Layout(props: ParentProps) {
               answerSets?: string[][]
               sessionID?: string
               source?: "askuser" | "question"
+              reject?: boolean
             }) => {
               const request = findAskUserRequest(input.requestID, input.sessionID) as
                 | { source?: "askuser" | "question"; questions?: Array<{ question: string }> }
@@ -76,6 +77,16 @@ export default function Layout(props: ParentProps) {
               const source = input.source ?? request?.source ?? "askuser"
 
               if (source === "question") {
+                if (input.reject) {
+                  const response = await fetch(`${globalSDK.url}/question/${input.requestID}/reject`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "x-opencode-directory": directory(),
+                    },
+                  })
+                  return response.json()
+                }
                 const response = await fetch(`${globalSDK.url}/question/${input.requestID}/reply`, {
                   method: "POST",
                   headers: {

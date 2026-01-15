@@ -39,6 +39,7 @@ type AskUserReplyInput = {
   answerSets?: string[][]
   sessionID?: string
   source?: "askuser" | "question"
+  reject?: boolean
 }
 
 type AskUserRequestEntry = {
@@ -79,6 +80,16 @@ const createAskUserResponder = (sync: SyncContext, baseUrl: string, directory: s
     const source = input.source ?? request?.source ?? "askuser"
 
     if (source === "question") {
+      if (input.reject) {
+        const response = await fetch(`${baseUrl}/question/${input.requestID}/reject`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-opencode-directory": directory,
+          },
+        })
+        return response.json()
+      }
       const response = await fetch(`${baseUrl}/question/${input.requestID}/reply`, {
         method: "POST",
         headers: {

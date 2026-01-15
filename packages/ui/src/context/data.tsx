@@ -58,6 +58,7 @@ export type AskUserRespondFn = (input: {
   answerSets?: string[][]
   sessionID?: string
   source?: "askuser" | "question"
+  reject?: boolean
 }) => Promise<unknown>
 
 export type PlanModeRespondFn = (input: { requestID: string; approved: boolean }) => Promise<unknown>
