@@ -7,6 +7,8 @@ import type {
   AppAgentsResponses,
   AppLogErrors,
   AppLogResponses,
+  AskuserCancelErrors,
+  AskuserCancelResponses,
   AskuserListForSessionResponses,
   AskuserListResponses,
   AskuserReplyErrors,
@@ -2630,6 +2632,36 @@ export class Askuser extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Cancel AskUserQuestion
+   *
+   * Cancel a pending AskUserQuestion request (dismiss).
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<AskuserCancelResponses, AskuserCancelErrors, ThrowOnError>({
+      url: "/askuser/{requestID}/cancel",
+      ...options,
+      ...params,
     })
   }
 

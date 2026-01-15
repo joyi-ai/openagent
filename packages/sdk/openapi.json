@@ -5097,6 +5097,68 @@
         ]
       }
     },
+    "/askuser/{requestID}/cancel": {
+      "post": {
+        "operationId": "askuser.cancel",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "directory",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestID",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "summary": "Cancel AskUserQuestion",
+        "description": "Cancel a pending AskUserQuestion request (dismiss).",
+        "responses": {
+          "200": {
+            "description": "Question cancelled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.askuser.cancel({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/askuser": {
       "get": {
         "operationId": "askuser.list",
@@ -9953,6 +10015,34 @@
           "properties"
         ]
       },
+      "Event.askuser.cancelled": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "askuser.cancelled"
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "requestID": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestID",
+              "sessionID"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties"
+        ]
+      },
       "Event.planmode.review": {
         "type": "object",
         "properties": {
@@ -10679,6 +10769,9 @@
           },
           {
             "$ref": "#/components/schemas/Event.askuser.replied"
+          },
+          {
+            "$ref": "#/components/schemas/Event.askuser.cancelled"
           },
           {
             "$ref": "#/components/schemas/Event.planmode.review"

@@ -715,6 +715,14 @@ export type EventAskuserReplied = {
   }
 }
 
+export type EventAskuserCancelled = {
+  type: "askuser.cancelled"
+  properties: {
+    requestID: string
+    sessionID: string
+  }
+}
+
 export type EventPlanmodeReview = {
   type: "planmode.review"
   properties: {
@@ -921,6 +929,7 @@ export type Event =
   | EventCommandExecuted
   | EventAskuserAsked
   | EventAskuserReplied
+  | EventAskuserCancelled
   | EventPlanmodeReview
   | EventPlanmodeResponded
   | EventSessionCreated
@@ -4591,6 +4600,39 @@ export type AskuserReplyResponses = {
 }
 
 export type AskuserReplyResponse = AskuserReplyResponses[keyof AskuserReplyResponses]
+
+export type AskuserCancelData = {
+  body?: never
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+  }
+  url: "/askuser/{requestID}/cancel"
+}
+
+export type AskuserCancelErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type AskuserCancelError = AskuserCancelErrors[keyof AskuserCancelErrors]
+
+export type AskuserCancelResponses = {
+  /**
+   * Question cancelled successfully
+   */
+  200: boolean
+}
+
+export type AskuserCancelResponse = AskuserCancelResponses[keyof AskuserCancelResponses]
 
 export type AskuserListData = {
   body?: never
