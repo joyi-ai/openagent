@@ -16,7 +16,7 @@ export function getPaneTitle(pane: PaneConfig | undefined, sync: GlobalSync) {
   if (!pane) return undefined
   const sessionId = pane.sessionId
   if (!sessionId) return "New session"
-  const directory = pane.directory
+  const directory = pane.worktree ?? pane.directory
   if (!directory) return sessionId
   const [store] = sync.child(directory)
   const session = store.session.find((candidate) => candidate.id === sessionId)
@@ -32,7 +32,7 @@ export function getPaneProjectLabel(pane: PaneConfig | undefined) {
 export function getPaneWorking(pane: PaneConfig | undefined, sync: GlobalSync) {
   if (!pane) return false
   const sessionId = pane.sessionId
-  const directory = pane.directory
+  const directory = pane.worktree ?? pane.directory
   if (!sessionId || !directory) return false
   const [store] = sync.child(directory)
   const status = store.session_status[sessionId]

@@ -55,6 +55,8 @@ import type {
   GlobalDisposeResponses,
   GlobalEventResponses,
   GlobalHealthResponses,
+  GlobalWorktreeDeleteErrors,
+  GlobalWorktreeDeleteResponses,
   InstanceDisposeResponses,
   LspStatusResponses,
   McpAddErrors,
@@ -164,8 +166,6 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
-  SessionWorktreeDeleteErrors,
-  SessionWorktreeDeleteResponses,
   SessionWorktreeGetErrors,
   SessionWorktreeGetResponses,
   SkillListResponses,
@@ -230,6 +230,115 @@ class HeyApiRegistry<T> {
   }
 }
 
+export class Worktree extends HeyApiClient {
+  /**
+   * Delete managed worktree
+   *
+   * Delete a managed git worktree by its path. Does not require project context.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).delete<
+      GlobalWorktreeDeleteResponses,
+      GlobalWorktreeDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/global/worktree",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List worktrees
+   *
+   * List all sandbox worktrees for the current project.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).get<WorktreeListResponses, unknown, ThrowOnError>({
+      url: "/experimental/worktree",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create worktree
+   *
+   * Create a new git worktree for the current project.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      worktreeCreateInput?: WorktreeCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { key: "worktreeCreateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorktreeCreateResponses, WorktreeCreateErrors, ThrowOnError>({
+      url: "/experimental/worktree",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get worktree status
+   *
+   * Get the worktree status for a session.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionWorktreeGetResponses, SessionWorktreeGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/worktree",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Global extends HeyApiClient {
   /**
    * Get health
@@ -266,6 +375,8 @@ export class Global extends HeyApiClient {
       ...options,
     })
   }
+
+  worktree = new Worktree({ client: this.client })
 }
 
 export class Project extends HeyApiClient {
@@ -1285,126 +1396,6 @@ export class Path extends HeyApiClient {
   }
 }
 
-export class Worktree extends HeyApiClient {
-  /**
-   * List worktrees
-   *
-   * List all sandbox worktrees for the current project.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
-    return (options?.client ?? this.client).get<WorktreeListResponses, unknown, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Create worktree
-   *
-   * Create a new git worktree for the current project.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      worktreeCreateInput?: WorktreeCreateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { key: "worktreeCreateInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<WorktreeCreateResponses, WorktreeCreateErrors, ThrowOnError>({
-      url: "/experimental/worktree",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Remove worktree
-   *
-   * Manually remove the worktree associated with a session.
-   */
-  public delete<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<
-      SessionWorktreeDeleteResponses,
-      SessionWorktreeDeleteErrors,
-      ThrowOnError
-    >({
-      url: "/session/{sessionID}/worktree",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get worktree status
-   *
-   * Get the worktree status for a session.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionWorktreeGetResponses, SessionWorktreeGetErrors, ThrowOnError>({
-      url: "/session/{sessionID}/worktree",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Vcs extends HeyApiClient {
   /**
    * Get VCS info
@@ -1486,7 +1477,6 @@ export class Session extends HeyApiClient {
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
-      roots?: boolean
       start?: number
       afterID?: string
       search?: string
@@ -1500,7 +1490,6 @@ export class Session extends HeyApiClient {
         {
           args: [
             { in: "query", key: "directory" },
-            { in: "query", key: "roots" },
             { in: "query", key: "start" },
             { in: "query", key: "afterID" },
             { in: "query", key: "search" },

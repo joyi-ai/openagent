@@ -3,6 +3,9 @@ import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Logo } from "@opencode-ai/ui/logo"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Popover } from "@opencode-ai/ui/popover"
+import { Spinner } from "@opencode-ai/ui/spinner"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
@@ -11,6 +14,7 @@ import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DateTime } from "luxon"
 import { ThemeDropup } from "@/components/theme-dropup"
+import { getFilename } from "@opencode-ai/util/path"
 
 export type HomeContentVariant = "page" | "pane"
 
@@ -18,10 +22,22 @@ export interface HomeContentProps {
   variant: HomeContentVariant
   onSelectProject?: (directory: string) => void
   onNavigateMulti?: () => void
+  currentWorktree?: string
+  onSelectWorktree?: (worktree: string | undefined) => void
+  onCreateWorktree?: () => Promise<string | undefined> | string | undefined
+  onDeleteWorktree?: (worktree: string) => Promise<void> | void
   selectedProject?: string
   hideLogo?: boolean
   showRelativeTime?: boolean
   showThemePicker?: boolean
+}
+
+const normalizeDirectory = (input: string | undefined) => {
+  if (!input) return ""
+  const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!normalized) return ""
+  if (!/[a-zA-Z]:/.test(normalized) && !input.includes("\\")) return normalized
+  return normalized.toLowerCase()
 }
 
 export function HomeContent(props: HomeContentProps) {
@@ -32,6 +48,10 @@ export function HomeContent(props: HomeContentProps) {
   const homedir = createMemo(() => sync.data.path.home)
   const [internalSelected, setInternalSelected] = createSignal<string | undefined>(undefined)
   const [showMore, setShowMore] = createSignal(false)
+  const [creatingWorktree, setCreatingWorktree] = createSignal(false)
+  const [worktreePopoverOpen, setWorktreePopoverOpen] = createSignal(false)
+  const [deletingWorktrees, setDeletingWorktrees] = createSignal<Set<string>>(new Set())
+  const [deletedWorktrees, setDeletedWorktrees] = createSignal<Set<string>>(new Set())
 
   // For page variant, auto-select most recent project
   const mostRecentProject = createMemo(() => {
@@ -91,14 +111,23 @@ export function HomeContent(props: HomeContentProps) {
   const selectedProjectData = createMemo(() => {
     const selected = selectedProject()
     if (!selected) return undefined
-    return sync.data.project.find((p) => p.worktree === selected)
+    const normalized = normalizeDirectory(selected)
+    const direct = sync.data.project.find((project) => normalizeDirectory(project.worktree) === normalized)
+    if (direct) return direct
+    const sandboxMatch = sync.data.project.find((project) => {
+      const sandboxes = project.sandboxes ?? []
+      return sandboxes.some((sandbox) => normalizeDirectory(sandbox) === normalized)
+    })
+    if (sandboxMatch) return sandboxMatch
+    return undefined
   })
 
   // Recent projects: exclude selected, limit to 4
   const recentProjects = createMemo(() => {
     const selected = selectedProject()
+    const selectedKey = normalizeDirectory(selected)
     return sync.data.project
-      .filter((p) => p.worktree !== selected)
+      .filter((project) => normalizeDirectory(project.worktree) !== selectedKey)
       .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
       .slice(0, 4)
   })
@@ -112,8 +141,237 @@ export function HomeContent(props: HomeContentProps) {
   const isCompact = createMemo(() => props.variant === "page" && props.hideLogo)
   const otherProjects = createMemo(() => {
     const current = selectedProject()
-    return projects().filter((project) => project.worktree !== current)
+    const currentKey = normalizeDirectory(current)
+    return projects().filter((project) => normalizeDirectory(project.worktree) !== currentKey)
   })
+
+  type WorktreeOption =
+    | {
+        kind: "root"
+        path: string
+        id: string
+      }
+    | {
+        kind: "worktree"
+        path: string
+        id: string
+      }
+    | {
+        kind: "new"
+        id: string
+      }
+
+  const worktreeProject = createMemo(() => {
+    const selected = selectedProject()
+    if (!selected) return undefined
+    const project = selectedProjectData()
+    if (project) return project
+    return {
+      worktree: selected,
+      sandboxes: [],
+      vcs: undefined,
+    }
+  })
+
+  const worktreePaths = createMemo(() => {
+    const project = worktreeProject()
+    if (!project) return []
+    const base = project.worktree
+    const baseKey = normalizeDirectory(base)
+    const sandboxes = project.sandboxes ?? []
+    const deleted = deletedWorktrees()
+    const unique = new Map<string, string>()
+    for (const dir of sandboxes) {
+      const key = normalizeDirectory(dir)
+      if (!key) continue
+      if (key === baseKey) continue
+      if (unique.has(key)) continue
+      // Skip worktrees that have been deleted (optimistic update)
+      if (deleted.has(key)) continue
+      unique.set(key, dir)
+    }
+    const current = props.currentWorktree
+    if (current) {
+      const currentKey = normalizeDirectory(current)
+      if (currentKey && currentKey !== baseKey && !unique.has(currentKey) && !deleted.has(currentKey)) {
+        unique.set(currentKey, current)
+      }
+    }
+    // Clean up deletedWorktrees - remove entries that are no longer in sandboxes
+    const sandboxKeys = new Set(sandboxes.map(normalizeDirectory))
+    const toCleanup = [...deleted].filter((key) => !sandboxKeys.has(key))
+    if (toCleanup.length > 0) {
+      setDeletedWorktrees((prev) => {
+        const next = new Set(prev)
+        for (const key of toCleanup) next.delete(key)
+        return next
+      })
+    }
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b))
+  })
+
+  const canCreateWorktree = createMemo(() => {
+    const project = worktreeProject()
+    if (!project) return false
+    if (project.vcs !== "git") return false
+    return !!props.onCreateWorktree
+  })
+
+  const worktreeOptions = createMemo(() => {
+    const project = worktreeProject()
+    if (!project) return []
+    const baseKey = normalizeDirectory(project.worktree)
+    const options: WorktreeOption[] = []
+    if (canCreateWorktree()) options.push({ kind: "new", id: "new" })
+    options.push({ kind: "root", path: project.worktree, id: `root:${baseKey}` })
+    options.push(
+      ...worktreePaths().map((path) => ({
+        kind: "worktree" as const,
+        path,
+        id: `worktree:${normalizeDirectory(path)}`,
+      })),
+    )
+    return options
+  })
+
+  const currentWorktreeOption = createMemo(() => {
+    const options = worktreeOptions()
+    if (options.length === 0) return undefined
+    const current = props.currentWorktree
+    if (!current) return options.find((option) => option.kind === "root") ?? options[0]
+    const currentKey = normalizeDirectory(current)
+    // Find exact match - this will match root if current equals root path
+    const match = options.find((option) => {
+      if (option.kind === "new") return false
+      return normalizeDirectory(option.path) === currentKey
+    })
+    if (match) return match
+    return options.find((option) => option.kind === "root") ?? options[0]
+  })
+
+  async function handleWorktreeSelect(option: WorktreeOption | undefined) {
+    if (!option) return
+    if (option.kind === "new") {
+      if (!props.onCreateWorktree) return
+      if (creatingWorktree()) return
+      setCreatingWorktree(true)
+      const created = await Promise.resolve(props.onCreateWorktree()).catch(() => undefined)
+      setCreatingWorktree(false)
+      if (created) props.onSelectWorktree?.(created)
+      return
+    }
+    // Pass the actual path for both root and worktree to ensure consistent handling
+    props.onSelectWorktree?.(option.path)
+  }
+
+  const worktreeLabel = (option: WorktreeOption) => {
+    if (option.kind === "new") return "+ new"
+    if (option.kind === "root") return "none"
+    // Strip project name prefix from worktree name (e.g., "opencode-bright-galaxy" -> "bright-galaxy")
+    const name = getFilename(option.path)
+    const project = worktreeProject()
+    if (!project) return name
+    const projectName = getFilename(project.worktree)
+    if (name.startsWith(projectName + "-")) {
+      return name.slice(projectName.length + 1)
+    }
+    return name
+  }
+
+  const worktreeTriggerLabel = () => {
+    const current = currentWorktreeOption()
+    if (!current || current.kind === "root") return ""
+    return worktreeLabel(current)
+  }
+
+  async function handleDeleteWorktree(path: string) {
+    const key = normalizeDirectory(path)
+    // Add to deleting set
+    setDeletingWorktrees((prev) => new Set([...prev, path]))
+    try {
+      await props.onDeleteWorktree?.(path)
+      // Add to deleted set for optimistic update
+      if (key) {
+        setDeletedWorktrees((prev) => new Set([...prev, key]))
+      }
+    } finally {
+      // Remove from deleting set
+      setDeletingWorktrees((prev) => {
+        const next = new Set(prev)
+        next.delete(path)
+        return next
+      })
+    }
+  }
+
+  const WorktreePopover = (popoverProps: { size: "normal" | "large" }) => (
+    <Popover
+      placement="bottom-start"
+      open={worktreePopoverOpen()}
+      onOpenChange={setWorktreePopoverOpen}
+      trigger={
+        <Button
+          size={popoverProps.size}
+          variant="ghost"
+          class={popoverProps.size === "large" ? "text-14-mono px-2" : "shrink-0 px-2"}
+          disabled={creatingWorktree()}
+        >
+          <Icon name="branch" size="small" />
+          <Show when={worktreeTriggerLabel()}>
+            <span>{worktreeTriggerLabel()}</span>
+          </Show>
+          <Icon name="chevron-down" size="small" class="text-text-weak" />
+        </Button>
+      }
+    >
+      <div class="flex flex-col gap-0.5 min-w-32">
+        <For each={worktreeOptions()}>
+          {(option) => {
+            const label = worktreeLabel(option)
+            const isSelected = () => currentWorktreeOption()?.id === option.id
+            return (
+              <div class="group flex items-center gap-1">
+                <Button
+                  size="normal"
+                  variant={isSelected() ? "secondary" : "ghost"}
+                  class="flex-1 justify-start px-2 text-14-mono"
+                  onClick={() => {
+                    handleWorktreeSelect(option)
+                    if (option.kind !== "new") setWorktreePopoverOpen(false)
+                  }}
+                >
+                  <span class="truncate">{label}</span>
+                </Button>
+                <Show when={option.kind === "worktree" ? option : undefined}>
+                  {(worktree) => {
+                    const isDeleting = () => deletingWorktrees().has(worktree().path)
+                    return (
+                      <Show
+                        when={!isDeleting()}
+                        fallback={
+                          <div class="size-6 flex items-center justify-center">
+                            <Spinner class="size-4 text-text-weak" />
+                          </div>
+                        }
+                      >
+                        <IconButton
+                          icon="trash"
+                          size="normal"
+                          variant="ghost"
+                          class="opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-critical-base"
+                          onClick={() => handleDeleteWorktree(worktree().path)}
+                        />
+                      </Show>
+                    )
+                  }}
+                </Show>
+              </div>
+            )
+          }}
+        </For>
+      </div>
+    </Popover>
+  )
 
   return (
     <Show
@@ -171,23 +429,22 @@ export function HomeContent(props: HomeContentProps) {
                           </div>
                         </div>
                         <Show when={selectedProject()}>
-                          <Button
-                            size="large"
-                            variant="secondary"
-                            class="text-14-mono text-left justify-between px-3"
-                            onClick={() => selectProject(selectedProject()!)}
+                          <div
+                            class="text-14-mono text-left justify-between pl-3 pr-1 min-w-0 flex-1 flex items-center gap-1 h-8 rounded-md text-text-strong"
+                            style={{
+                              "background-color": "var(--button-secondary-base)",
+                              "box-shadow": "var(--shadow-xs-border)",
+                            }}
                           >
-                            <span class="truncate text-text-accent-base">
+                            <span class="truncate text-text-accent-base flex-1 min-w-0">
                               {selectedProject()!.replace(homedir(), "~")}
                             </span>
-                            <Show when={selectedProjectData()}>
-                              <span class="text-14-regular text-text-weak">
-                                {DateTime.fromMillis(
-                                  selectedProjectData()!.time.updated ?? selectedProjectData()!.time.created,
-                                ).toRelative()}
-                              </span>
+                            <Show when={worktreeOptions().length > 1}>
+                              <div class="shrink-0">
+                                <WorktreePopover size="large" />
+                              </div>
                             </Show>
-                          </Button>
+                          </div>
                         </Show>
                         <Show when={!selectedProject()}>
                           <div class="text-14-mono text-text-weak px-3">No project selected</div>
@@ -247,16 +504,19 @@ export function HomeContent(props: HomeContentProps) {
                 <Match when={projects().length > 0}>
                   <div class="flex flex-col gap-3">
                     <div class="flex items-center justify-between gap-3">
-                      <div class="flex items-center gap-2 min-w-0">
+                      <div class="flex items-center gap-2 min-w-0 flex-1">
                         <IconButton
                           icon="folder-add-left"
                           variant="ghost"
                           aria-label="Open project"
                           onClick={chooseProject}
                         />
-                        <div class="min-w-0 text-14-mono text-text-strong truncate">
+                        <div class="min-w-0 text-14-mono text-text-strong truncate flex-1">
                           {selectedProject() ? selectedProject()!.replace(homedir(), "~") : "Select a project"}
                         </div>
+                        <Show when={selectedProject() && worktreeOptions().length > 1}>
+                          <WorktreePopover size="normal" />
+                        </Show>
                       </div>
                       <Show when={otherProjects().length > 0}>
                         <Button

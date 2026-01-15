@@ -24,10 +24,13 @@ import type { UserMessage } from "@opencode-ai/sdk/v2"
 export interface SessionPaneProps {
   paneId?: string
   directory: string
+  projectDirectory?: string
+  worktree?: string
   sessionId?: string
   isFocused?: Accessor<boolean>
   onSessionChange?: (sessionId: string | undefined) => void
   onDirectoryChange?: (directory: string) => void
+  onWorktreeChange?: (worktree: string | undefined) => void
   onClose?: () => void
 }
 
@@ -47,6 +50,13 @@ export function SessionPane(props: SessionPaneProps) {
   })
 
   const sessionId = createMemo(() => props.sessionId)
+  const projectDirectory = createMemo(() => props.projectDirectory ?? props.directory)
+  const sessionInfo = createMemo(() => {
+    const id = sessionId()
+    if (!id) return
+    return sync.session.get(id)
+  })
+  const sessionDirectory = createMemo(() => sessionInfo()?.directory)
 
   // Directory matching
   const expectedDirectory = createMemo(() => props.directory)
@@ -92,6 +102,21 @@ export function SessionPane(props: SessionPaneProps) {
   useSessionSync({
     sessionId,
     directoryMatches: sdkDirectoryMatches,
+  })
+
+  createEffect(() => {
+    const onWorktreeChange = props.onWorktreeChange
+    if (!onWorktreeChange) return
+    const directory = sessionDirectory()
+    if (!directory) return
+    const projectDir = projectDirectory()
+    if (directory === projectDir) {
+      if (props.worktree === undefined) return
+      onWorktreeChange(undefined)
+      return
+    }
+    if (props.worktree === directory) return
+    onWorktreeChange(directory)
   })
 
   // Status
@@ -343,6 +368,7 @@ export function SessionPane(props: SessionPaneProps) {
         <SessionPaneHeader
           paneId={props.paneId}
           directory={props.directory}
+          projectDirectory={props.projectDirectory}
           sessionId={sessionId()}
           isFocused={isFocused}
           onSessionChange={props.onSessionChange}

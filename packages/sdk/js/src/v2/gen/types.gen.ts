@@ -2273,6 +2273,7 @@ export type OAuth = {
   refresh: string
   access: string
   expires: number
+  accountId?: string
   enterpriseUrl?: string
 }
 
@@ -2339,6 +2340,37 @@ export type GlobalDisposeResponses = {
 }
 
 export type GlobalDisposeResponse = GlobalDisposeResponses[keyof GlobalDisposeResponses]
+
+export type GlobalWorktreeDeleteData = {
+  body?: never
+  path?: never
+  query: {
+    directory: string
+  }
+  url: "/global/worktree"
+}
+
+export type GlobalWorktreeDeleteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type GlobalWorktreeDeleteError = GlobalWorktreeDeleteErrors[keyof GlobalWorktreeDeleteErrors]
+
+export type GlobalWorktreeDeleteResponses = {
+  /**
+   * Worktree deleted
+   */
+  200: boolean
+}
+
+export type GlobalWorktreeDeleteResponse = GlobalWorktreeDeleteResponses[keyof GlobalWorktreeDeleteResponses]
 
 export type ProjectListData = {
   body?: never

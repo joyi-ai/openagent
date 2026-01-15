@@ -9,6 +9,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 export type PaneConfig = {
   id: string
   directory?: string
+  worktree?: string
   sessionId?: string
 }
 
@@ -90,12 +91,12 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
       })
     }
 
-    function addPane(directory?: string, sessionId?: string, options?: { focus?: boolean }) {
+    function addPane(directory?: string, sessionId?: string, options?: { focus?: boolean; worktree?: string }) {
       if (store.panes.length >= MAX_TOTAL_PANES) {
         return undefined
       }
       const id = generatePaneId()
-      const pane: PaneConfig = { id, directory, sessionId }
+      const pane: PaneConfig = { id, directory, worktree: options?.worktree, sessionId }
 
       const total = store.panes.length
       const targetPage = Math.floor(total / MAX_PANES_PER_PAGE)
@@ -128,7 +129,9 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
     function addPaneFromFocused(directoryFallback?: string, options?: { focus?: boolean }) {
       const focused = focusedPane()
       const directory = focused?.directory ?? directoryFallback
-      const id = addPane(directory, undefined, options)
+      const worktree = focused?.worktree
+      const nextOptions = options ? { ...options, worktree } : { worktree }
+      const id = addPane(directory, undefined, nextOptions)
       copyPaneSetup(focused?.id, id)
       return id
     }
@@ -305,7 +308,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         const pane = store.panes.find((p) => p.id === id)
         if (!pane || store.panes.length >= MAX_TOTAL_PANES) return undefined
 
-        const insert = (sessionId?: string, directory?: string) => {
+        const insert = (sessionId?: string, directory?: string, worktree?: string) => {
           if (store.panes.length >= MAX_TOTAL_PANES) return undefined
           const index = store.panes.findIndex((p) => p.id === id)
           if (index === -1) return undefined
@@ -314,6 +317,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
           const clonedPane: PaneConfig = {
             id: newId,
             directory,
+            worktree,
             sessionId,
           }
 
@@ -335,7 +339,7 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
         }
 
         if (!pane.sessionId) {
-          return insert(pane.sessionId, pane.directory)
+          return insert(pane.sessionId, pane.directory, pane.worktree)
         }
 
         if (!pane.directory) {
@@ -346,10 +350,11 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
           return undefined
         }
 
+        const directory = pane.worktree ?? pane.directory
         const created = await globalSDK.client.session
           .fork({
             sessionID: pane.sessionId,
-            directory: pane.directory,
+            directory,
           })
           .then((result) => result.data)
           .catch(() => {
@@ -361,7 +366,9 @@ export const { use: useMultiPane, provider: MultiPaneProvider } = createSimpleCo
           })
 
         if (!created) return undefined
-        return insert(created.id, created.directory ?? pane.directory)
+        const nextWorktree =
+          created.directory && created.directory !== pane.directory ? created.directory : pane.worktree
+        return insert(created.id, pane.directory, nextWorktree)
       },
 
       toggleMaximize(id: string) {

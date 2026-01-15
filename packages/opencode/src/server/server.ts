@@ -440,8 +440,7 @@ export namespace Server {
                 }),
               })
               const handler = (event: { directory?: string; payload: EventPayload }) => {
-                if (!event.directory) return
-                buffer.push({ directory: event.directory, payload: event.payload })
+                buffer.push({ directory: event.directory ?? "global", payload: event.payload })
               }
               GlobalBus.on("event", handler)
 
@@ -485,6 +484,36 @@ export namespace Server {
                 properties: {},
               },
             })
+            return c.json(true)
+          },
+        )
+        .delete(
+          "/global/worktree",
+          describeRoute({
+            summary: "Delete managed worktree",
+            description: "Delete a managed git worktree by its path. Does not require project context.",
+            operationId: "global.worktree.delete",
+            responses: {
+              200: {
+                description: "Worktree deleted",
+                content: {
+                  "application/json": {
+                    schema: resolver(z.boolean()),
+                  },
+                },
+              },
+              ...errors(400, 404),
+            },
+          }),
+          validator(
+            "query",
+            z.object({
+              directory: z.string(),
+            }),
+          ),
+          async (c) => {
+            const { directory } = c.req.valid("query")
+            await Worktree.removeManaged(directory)
             return c.json(true)
           },
         )

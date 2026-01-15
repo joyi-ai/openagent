@@ -1,6 +1,6 @@
 import { Show, createMemo, onMount, createEffect, on, createSignal, type JSX } from "solid-js"
 import { useSearchParams } from "@solidjs/router"
-import { useMultiPane } from "@/context/multi-pane"
+import { useMultiPane, type PaneConfig } from "@/context/multi-pane"
 import { PaneGrid } from "@/components/pane-grid"
 import { SessionPane } from "@/components/session-pane"
 import { useLayout } from "@/context/layout"
@@ -227,19 +227,24 @@ function GlobalPromptSynced(props: { paneId: string; directory: string; sessionI
 function GlobalPromptWrapper() {
   const multiPane = useMultiPane()
   const focused = createMemo(() => multiPane.focusedPane())
+  const focusedDirectory = createMemo(() => {
+    const pane = focused()
+    if (!pane) return
+    return pane.worktree ?? pane.directory
+  })
 
   return (
-    <Show when={focused()}>
-      {(pane) => (
-        <Show when={pane().directory}>
-          {(directory) => (
-            <SDKProvider directory={directory()}>
-              <SyncProvider>
+    <Show when={focusedDirectory()}>
+      {(directory) => (
+        <SDKProvider directory={directory()}>
+          <SyncProvider>
+            <Show when={focused()}>
+              {(pane) => (
                 <GlobalPromptSynced paneId={pane().id} directory={directory()} sessionId={pane().sessionId} />
-              </SyncProvider>
-            </SDKProvider>
-          )}
-        </Show>
+              )}
+            </Show>
+          </SyncProvider>
+        </SDKProvider>
       )}
     </Show>
   )
@@ -258,6 +263,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
   const [activePaneDraggable, setActivePaneDraggable] = createSignal<string | undefined>(undefined)
   const dragOverlayBackground = "hsl(from var(--background-base) h s l / 0.55)"
   const overlayBackground = "hsl(from var(--background-base) h s l / 0.25)"
+  const paneDirectory = (pane: PaneConfig | undefined) => pane?.worktree ?? pane?.directory
 
   const isCrisp = () => theme.activeGradientMode() === "crisp"
   const backdropStyle = (): JSX.CSSProperties => {
@@ -329,13 +335,14 @@ function MultiPaneContent(props: MultiPanePageProps) {
 
   const closePaneWithWorktreeCheck = (paneId: string) => {
     const pane = multiPane.panes().find((p) => p.id === paneId)
-    if (!pane?.sessionId || !pane?.directory) {
+    const directory = paneDirectory(pane)
+    if (!pane?.sessionId || !directory) {
       multiPane.removePane(paneId)
       return
     }
 
     // Get session info from globalSync
-    const store = globalSync.child(pane.directory)[0]
+    const store = globalSync.child(directory)[0]
     const session = store.session.find((s) => s.id === pane.sessionId)
     const worktreePath = (session as any)?.worktree?.path
 
@@ -351,7 +358,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
         onConfirm={async () => {
           await globalSDK.client.session.worktree.delete({
             sessionID: pane.sessionId!,
-            directory: pane.directory,
+            directory,
           })
           showToast({
             title: "Worktree deleted",
@@ -597,26 +604,41 @@ function MultiPaneContent(props: MultiPanePageProps) {
                   renderPane={(pane) => {
                     const isFocused = createMemo(() => multiPane.focusedPaneId() === pane.id)
                     const state = createMemo(() => getPaneState(pane))
+                    const activeDirectory = createMemo(() => pane.worktree ?? pane.directory)
                     return (
                       <Show
                         when={state() === "session"}
-                        fallback={<PaneHome paneId={pane.id} isFocused={isFocused} selectedProject={pane.directory} />}
+                        fallback={
+                          <PaneHome
+                            paneId={pane.id}
+                            isFocused={isFocused}
+                            selectedProject={pane.directory}
+                            currentWorktree={pane.worktree}
+                          />
+                        }
                       >
                         {(_) => (
-                          <SDKProvider directory={pane.directory!}>
+                          <SDKProvider directory={activeDirectory()!}>
                             <SyncProvider>
-                              <PaneSyncedProviders paneId={pane.id} directory={pane.directory!}>
+                              <PaneSyncedProviders paneId={pane.id} directory={activeDirectory()!}>
                                 <SessionPane
                                   paneId={pane.id}
-                                  directory={pane.directory!}
+                                  directory={activeDirectory()!}
+                                  projectDirectory={pane.directory}
                                   sessionId={pane.sessionId!}
                                   isFocused={isFocused}
+                                  worktree={pane.worktree}
                                   onSessionChange={(sessionId: string | undefined) =>
                                     multiPane.updatePane(pane.id, { sessionId })
                                   }
                                   onDirectoryChange={(dir: string) =>
-                                    multiPane.updatePane(pane.id, { directory: dir, sessionId: undefined })
+                                    multiPane.updatePane(pane.id, {
+                                      directory: dir,
+                                      sessionId: undefined,
+                                      worktree: undefined,
+                                    })
                                   }
+                                  onWorktreeChange={(worktree) => multiPane.updatePane(pane.id, { worktree })}
                                   onClose={() => closePaneWithWorktreeCheck(pane.id)}
                                 />
                               </PaneSyncedProviders>

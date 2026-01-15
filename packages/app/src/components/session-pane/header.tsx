@@ -10,6 +10,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 
 export interface SessionPaneHeaderProps {
   directory: string
+  projectDirectory?: string
   sessionId?: string
   paneId?: string
   isFocused?: Accessor<boolean>
@@ -26,6 +27,7 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
   const currentSession = createMemo(() => sessions().find((s) => s.id === props.sessionId))
   const branch = createMemo(() => sync.data.vcs?.branch)
   const focused = createMemo(() => props.isFocused?.() ?? true)
+  const currentDirectory = createMemo(() => props.projectDirectory ?? props.directory)
   const sessionKey = createMemo(
     () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
   )
@@ -59,7 +61,7 @@ export function SessionPaneHeader(props: SessionPaneHeaderProps) {
         <div class="flex items-center gap-1 min-w-0 flex-1">
           <Select
             options={layout.projects.list().map((project) => project.worktree)}
-            current={props.directory}
+            current={currentDirectory()}
             label={(x) => {
               const truncated = truncateDirectoryPrefix(x)
               const b = x === sync.directory ? branch() : undefined

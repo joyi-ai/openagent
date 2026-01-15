@@ -12,6 +12,7 @@ import { fn } from "@opencode-ai/util/fn"
 import { BusEvent } from "@/bus/bus-event"
 import { iife } from "@/util/iife"
 import { GlobalBus } from "@/bus/global"
+import { Global } from "@/global"
 import { existsSync } from "fs"
 
 export namespace Project {
@@ -219,9 +220,32 @@ export namespace Project {
     })
   }
 
+  async function resolveSandboxes(project: Info) {
+    const stored = project.sandboxes ?? []
+    const unique = new Set(stored)
+    const root = path.join(Global.Path.data, "worktree", project.id)
+    const managed = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+    for (const entry of managed) {
+      if (!entry.isDirectory()) continue
+      unique.add(path.join(root, entry.name))
+    }
+    const valid: string[] = []
+    for (const dir of unique) {
+      const stat = await fs.stat(dir).catch(() => undefined)
+      if (stat?.isDirectory()) valid.push(dir)
+    }
+    return valid
+  }
+
   export async function list() {
     const keys = await Storage.list(["project"])
-    return await Promise.all(keys.map((x) => Storage.read<Info>(x)))
+    const projects = await Promise.all(keys.map((x) => Storage.read<Info>(x)))
+    return await Promise.all(
+      projects.map(async (project) => ({
+        ...project,
+        sandboxes: await resolveSandboxes(project),
+      })),
+    )
   }
 
   export const update = fn(
@@ -252,14 +276,44 @@ export namespace Project {
     },
   )
 
+  export async function addSandbox(projectID: string, sandbox: string) {
+    if (!sandbox) return
+    const result = await Storage.update<Info>(["project", projectID], (draft) => {
+      if (!draft.sandboxes) draft.sandboxes = []
+      if (draft.worktree === sandbox) return
+      if (draft.sandboxes.includes(sandbox)) return
+      draft.sandboxes.push(sandbox)
+      draft.time.updated = Date.now()
+    })
+    GlobalBus.emit("event", {
+      payload: {
+        type: Event.Updated.type,
+        properties: result,
+      },
+    })
+    return result
+  }
+
+  export async function removeSandbox(projectID: string, sandbox: string) {
+    if (!sandbox) return
+    const result = await Storage.update<Info>(["project", projectID], (draft) => {
+      if (!draft.sandboxes || draft.sandboxes.length === 0) return
+      if (!draft.sandboxes.includes(sandbox)) return
+      draft.sandboxes = draft.sandboxes.filter((dir) => dir !== sandbox)
+      draft.time.updated = Date.now()
+    })
+    GlobalBus.emit("event", {
+      payload: {
+        type: Event.Updated.type,
+        properties: result,
+      },
+    })
+    return result
+  }
+
   export async function sandboxes(projectID: string) {
     const project = await Storage.read<Info>(["project", projectID]).catch(() => undefined)
-    if (!project?.sandboxes) return []
-    const valid: string[] = []
-    for (const dir of project.sandboxes) {
-      const stat = await fs.stat(dir).catch(() => undefined)
-      if (stat?.isDirectory()) valid.push(dir)
-    }
-    return valid
+    if (!project) return []
+    return resolveSandboxes(project)
   }
 }

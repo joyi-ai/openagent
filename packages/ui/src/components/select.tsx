@@ -1,5 +1,5 @@
 import { Select as Kobalte } from "@kobalte/core/select"
-import { createMemo, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { createMemo, Show, splitProps, type ComponentProps, type JSX } from "solid-js"
 import { pipe, groupBy, entries, map } from "remeda"
 import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
@@ -10,11 +10,14 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   current?: T
   value?: (x: T) => string
   label?: (x: T) => string
+  triggerLabel?: (x: T) => string
   groupBy?: (x: T) => string
   onSelect?: (value: T | undefined) => void
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
-  children?: (item: T | undefined) => JSX.Element
+  itemRenderer?: (item: T | undefined) => JSX.Element
+  icon?: ComponentProps<typeof Icon>["name"]
+  hideIndicator?: boolean
 }
 
 export function Select<T>(props: SelectProps<T> & ButtonProps) {
@@ -26,9 +29,12 @@ export function Select<T>(props: SelectProps<T> & ButtonProps) {
     "current",
     "value",
     "label",
+    "triggerLabel",
     "groupBy",
     "onSelect",
-    "children",
+    "itemRenderer",
+    "icon",
+    "hideIndicator",
   ])
   const grouped = createMemo(() => {
     const result = pipe(
@@ -65,16 +71,18 @@ export function Select<T>(props: SelectProps<T> & ButtonProps) {
           }}
           {...itemProps}
         >
-          <Kobalte.ItemLabel data-slot="select-select-item-label">
-            {local.children
-              ? local.children(itemProps.item.rawValue)
+          <Kobalte.ItemLabel data-slot="select-select-item-label" data-full-width={local.hideIndicator || undefined}>
+            {local.itemRenderer
+              ? local.itemRenderer(itemProps.item.rawValue)
               : local.label
                 ? local.label(itemProps.item.rawValue)
                 : (itemProps.item.rawValue as string)}
           </Kobalte.ItemLabel>
-          <Kobalte.ItemIndicator data-slot="select-select-item-indicator">
-            <Icon name="check-small" size="small" />
-          </Kobalte.ItemIndicator>
+          <Show when={!local.hideIndicator}>
+            <Kobalte.ItemIndicator data-slot="select-select-item-indicator">
+              <Icon name="check-small" size="small" />
+            </Kobalte.ItemIndicator>
+          </Show>
         </Kobalte.Item>
       )}
       onChange={(v) => {
@@ -92,12 +100,14 @@ export function Select<T>(props: SelectProps<T> & ButtonProps) {
           [local.class ?? ""]: !!local.class,
         }}
       >
+        {local.icon && <Icon name={local.icon} size="small" />}
         <Kobalte.Value<T> data-slot="select-select-trigger-value">
           {(state) => {
             const selected = local.current ?? state.selectedOption()
-            if (!selected) return local.placeholder || ""
-            if (local.label) return local.label(selected)
-            return selected as string
+            if (!selected) return local.placeholder || null
+            const labelFn = local.triggerLabel ?? local.label
+            const text = labelFn ? labelFn(selected) : (selected as string)
+            return text || null
           }}
         </Kobalte.Value>
         <Kobalte.Icon data-slot="select-select-trigger-icon">

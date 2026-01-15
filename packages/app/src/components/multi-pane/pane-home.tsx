@@ -11,6 +11,7 @@ type PaneHomeProps = {
   paneId: string
   isFocused: () => boolean
   selectedProject?: string
+  currentWorktree?: string
   showBorder?: boolean
 }
 
@@ -29,7 +30,7 @@ export function PaneHome(props: PaneHomeProps) {
   const showBorder = createMemo(() => props.showBorder ?? multiPane.panes().length > 1)
 
   function updatePane(directory: string) {
-    multiPane.updatePane(props.paneId, { directory, sessionId: undefined })
+    multiPane.updatePane(props.paneId, { directory, worktree: undefined, sessionId: undefined })
     multiPane.setFocused(props.paneId)
   }
 
@@ -45,6 +46,11 @@ export function PaneHome(props: PaneHomeProps) {
 
   function handleProjectSelected(directory: string) {
     updatePane(directory)
+  }
+
+  function handleWorktreeSelected(worktree: string | undefined) {
+    multiPane.updatePane(props.paneId, { worktree })
+    multiPane.setFocused(props.paneId)
   }
 
   function handleNavigateMulti() {
@@ -134,10 +140,12 @@ export function PaneHome(props: PaneHomeProps) {
       </Show>
       <HomeScreen
         selectedProject={props.selectedProject}
+        currentWorktree={props.currentWorktree}
         hideLogo={hideLogo()}
         showRelativeTime={showRelativeTime()}
         showThemePicker={showThemePicker()}
         onProjectSelected={handleProjectSelected}
+        onWorktreeSelected={handleWorktreeSelected}
         onNavigateMulti={handleNavigateMulti}
       />
     </div>
