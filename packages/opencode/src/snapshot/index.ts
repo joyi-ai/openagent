@@ -244,7 +244,8 @@ export namespace Snapshot {
     const git = gitdir()
     return withLock(git, async () => {
       const result: FileDiff[] = []
-      await stageChanged(git)
+      // Note: stageChanged() is intentionally NOT called here because we're comparing
+      // two existing tree objects (from, to), not the working directory
       for await (const line of $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames --numstat ${from} ${to} -- .`
         .quiet()
         .cwd(Instance.directory)

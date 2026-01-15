@@ -59,7 +59,7 @@ export const DialogFork: Component = () => {
     if (!sessionID) return
 
     const parts = sync.data.part[item.id] ?? []
-    const restored = extractPromptFromParts(parts, { directory: sdk.directory })
+    const restored = extractPromptFromParts(parts)
 
     dialog.close()
 

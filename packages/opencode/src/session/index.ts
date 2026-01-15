@@ -1,3 +1,4 @@
+import path from "path"
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import { Decimal } from "decimal.js"
@@ -19,6 +20,7 @@ import { Snapshot } from "@/snapshot"
 import { Worktree } from "@/worktree"
 import { Cache } from "@/cache"
 import { StorageSqlite } from "@/storage/sqlite"
+import { Global } from "@/global"
 
 import type { Provider } from "@/provider/provider"
 import { PermissionNext } from "@/permission/next"
@@ -796,4 +798,11 @@ export namespace Session {
       })
     },
   )
+
+  /**
+   * Get the plan file path for a session
+   */
+  export function plan(session: Info): string {
+    return path.join(Global.Path.data, "plans", `${session.id}.md`)
+  }
 }

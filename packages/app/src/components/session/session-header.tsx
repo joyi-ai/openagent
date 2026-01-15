@@ -74,18 +74,19 @@ export function SessionHeader() {
                   const b = x === sync.directory ? branch() : undefined
                   return b ? `${name}:${b}` : name
                 }}
+                itemRenderer={(item) => {
+                  if (!item) return ""
+                  return (
+                    <div class="flex items-center gap-2">
+                      <Icon name="folder" size="small" />
+                      <div class="text-text-strong">{getFilename(item)}</div>
+                    </div>
+                  )
+                }}
                 onSelect={(x) => (x ? navigateToProject(x) : undefined)}
                 class="text-14-regular text-text-base"
                 variant="ghost"
-              >
-                {/* @ts-ignore */}
-                {(i) => (
-                  <div class="flex items-center gap-2">
-                    <Icon name="folder" size="small" />
-                    <div class="text-text-strong">{getFilename(i)}</div>
-                  </div>
-                )}
-              </Select>
+              />
               <div class="text-text-weaker">/</div>
             </div>
             <Select
