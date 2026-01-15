@@ -51,10 +51,16 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     }
   })
 
-  const openContext = () => {
+  const isContextOpen = createMemo(() => tabs().active() === "context")
+
+  const toggleContext = () => {
     if (!effectiveSessionId()) return
-    tabs().open("context")
-    tabs().setActive("context")
+    if (isContextOpen()) {
+      tabs().setActive(undefined)
+    } else {
+      tabs().open("context")
+      tabs().setActive("context")
+    }
   }
 
   const circle = () => (
@@ -95,7 +101,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         <Switch>
           <Match when={variant() === "indicator"}>{circle()}</Match>
           <Match when={true}>
-            <Button type="button" variant="ghost" class="size-6" onClick={openContext}>
+            <Button type="button" variant="ghost" class="size-6" onClick={toggleContext}>
               {circle()}
             </Button>
           </Match>

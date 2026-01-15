@@ -8,6 +8,7 @@ import { DateTime } from "luxon"
 import { createDraggable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
+import { useLayout } from "@/context/layout"
 import { useMultiPane } from "@/context/multi-pane"
 import { useHeaderOverlay } from "@/hooks/use-header-overlay"
 import { useSessionMessages } from "@/hooks/use-session-messages"
@@ -17,6 +18,7 @@ import { useMessageActions } from "@/hooks/use-message-actions"
 import { ThemeDropup } from "@/components/theme-dropup"
 import { SessionPaneHeader } from "./header"
 import { MobileView } from "./mobile-view"
+import { ContextTab } from "./context-tab"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { useNotification } from "@/context/notification"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
@@ -37,6 +39,7 @@ export interface SessionPaneProps {
 export function SessionPane(props: SessionPaneProps) {
   const sync = useSync()
   const sdk = useSDK()
+  const layout = useLayout()
   const multiPane = useMultiPane()
   const notification = useNotification()
   const messageActions = useMessageActions()
@@ -66,6 +69,10 @@ export function SessionPane(props: SessionPaneProps) {
   const sessionKey = createMemo(
     () => `multi-${props.paneId ?? "pane"}-${props.directory}${props.sessionId ? "/" + props.sessionId : ""}`,
   )
+
+  // Tabs for context panel
+  const tabs = createMemo(() => layout.tabs(sessionKey()))
+  const activeTab = createMemo(() => tabs().active())
 
   // Todos
   const todos = createMemo(() => {
@@ -197,8 +204,87 @@ export function SessionPane(props: SessionPaneProps) {
 
   const sessionTurnPadding = () => "pb-0"
 
+  // Auto-scroll: scroll to bottom when content grows, if user is near bottom
+  const [scrollContainer, setScrollContainer] = createSignal<HTMLDivElement>()
+  const [isAtBottom, setIsAtBottom] = createSignal(true)
+
+  createEffect(() => {
+    const container = scrollContainer()
+    if (!container) return
+    const content = container.firstElementChild as HTMLElement | null
+    if (!content) return
+
+    const observer = new ResizeObserver(() => {
+      if (isAtBottom()) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  })
+
+  // Scroll to bottom when session loads
+  createEffect(
+    on(
+      () => sessionId(),
+      () => {
+        const container = scrollContainer()
+        if (container) {
+          requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight
+            setIsAtBottom(true)
+          })
+        }
+      },
+    ),
+  )
+
   // Todo footer collapse state
   const [todoCollapsed, setTodoCollapsed] = createSignal(false)
+
+  // Context panel state with enter/exit animation support
+  const [contextPanelState, setContextPanelState] = createSignal<"closed" | "entering" | "open" | "closing">("closed")
+
+  createEffect(
+    on(
+      () => activeTab() === "context",
+      (isOpen, wasOpen) => {
+        if (isOpen && !wasOpen) {
+          // Opening - first mount in "entering" state, then transition to "open"
+          setContextPanelState("entering")
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setContextPanelState("open")
+            })
+          })
+        } else if (!isOpen && wasOpen) {
+          // Closing - trigger exit animation
+          setContextPanelState("closing")
+          setTimeout(() => {
+            setContextPanelState("closed")
+          }, 200) // Match animation duration
+        }
+      },
+    ),
+  )
+
+  const closeContextPanel = () => {
+    tabs().setActive(undefined)
+  }
+
+  // Dynamic spacer height based on todo count and collapse state
+  const todoSpacerHeight = createMemo(() => {
+    const activeTodos = todos().filter((t) => t.status !== "completed")
+    if (activeTodos.length === 0) return 0
+    const baseHeight = 50 // header + container padding + border
+    const itemHeight = 24
+    if (todoCollapsed()) {
+      // When collapsed, only in-progress item is visible
+      const hasInProgress = activeTodos.some((t) => t.status === "in_progress")
+      return baseHeight + (hasInProgress ? itemHeight : 0)
+    }
+    // When expanded, show all items (capped by CSS max-height of 160px ~= 6 items)
+    const itemCount = Math.min(activeTodos.length, 6)
+    return baseHeight + itemCount * itemHeight
+  })
 
   const handleMessageSelect = (message: UserMessage) => {
     const visible = sessionMessages.visibleUserMessages()
@@ -207,7 +293,32 @@ export function SessionPane(props: SessionPaneProps) {
     const expandsWindow = needed > store.turnLimit
     if (expandsWindow) setStore("turnLimit", needed + 5)
 
+    const isLastMessage = message.id === sessionMessages.lastUserMessage()?.id
     sessionMessages.setActiveMessage(message)
+
+    // Skip scrolling if clicking last message while already at bottom
+    if (isLastMessage && isAtBottom()) return
+
+    // Scroll to the message element
+    requestAnimationFrame(() => {
+      const container = scrollContainer()
+      if (!container) return
+
+      // For last message, scroll to bottom instead of scrollIntoView
+      // (scrollIntoView with block:start causes visual glitch when there's not enough content below)
+      if (isLastMessage) {
+        container.scrollTop = container.scrollHeight
+        setIsAtBottom(true)
+        return
+      }
+
+      const el = container.querySelector(`[data-message-id="${message.id}"]`) as HTMLElement | null
+      if (el) {
+        // Use manual scroll instead of scrollIntoView to avoid ancestor scroll shifts
+        container.scrollTop = el.offsetTop
+        setIsAtBottom(container.scrollHeight - container.scrollTop - container.clientHeight < 50)
+      }
+    })
   }
 
   // New session view
@@ -245,53 +356,97 @@ export function SessionPane(props: SessionPaneProps) {
   // Desktop session content
   const DesktopSessionContent = () => (
     <Show when={sessionId()} fallback={<NewSessionView />}>
-      <div class="flex items-stretch justify-start h-full min-h-0">
-        <SessionMessageRail
-          messages={sessionMessages.visibleUserMessages()}
-          current={sessionMessages.activeMessage()}
-          onMessageSelect={handleMessageSelect}
-          wide={true}
-        />
-        <div class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}>
-          <div class="flex min-h-full flex-col">
-            <div class="flex flex-col">
-              <For each={renderedUserMessages()}>
-                {(message) => (
-                  <SessionTurn
-                    sessionID={sessionId()!}
-                    messageID={message.id}
-                    lastUserMessageID={sessionMessages.lastUserMessage()?.id}
-                    stepsExpanded={store.stepsExpanded[message.id] ?? false}
-                    onStepsExpandedToggle={() => setStore("stepsExpanded", message.id, (x) => !x)}
-                    actions={{
-                      onEdit: messageActions.editMessage,
-                      onRestore: messageActions.restoreCheckpoint,
-                      onRetry: messageActions.retryMessage,
-                      onDelete: messageActions.deleteMessage,
-                    }}
-                    classes={{
-                      root: "min-w-0 w-full relative !h-auto",
-                      content: "flex flex-col justify-between !overflow-visible !h-auto",
-                      container: "w-full max-w-200 mx-auto px-6",
-                    }}
-                  />
-                )}
-              </For>
+      <div class="relative h-full min-h-0">
+        {/* Main session content - always visible */}
+        <div class="flex items-stretch justify-start h-full min-h-0">
+          <SessionMessageRail
+            messages={sessionMessages.visibleUserMessages()}
+            current={sessionMessages.activeMessage()}
+            onMessageSelect={handleMessageSelect}
+            wide={true}
+          />
+          <div
+            ref={setScrollContainer}
+            class={`${sessionTurnPadding()} flex-1 min-w-0 min-h-0 overflow-y-auto no-scrollbar`}
+            onScroll={(e) => {
+              const el = e.target as HTMLElement
+              setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 50)
+            }}
+          >
+            <div class="flex min-h-full flex-col">
+              <div class="flex flex-col">
+                <For each={renderedUserMessages()}>
+                  {(message) => (
+                    <div data-message-id={message.id}>
+                      <SessionTurn
+                        sessionID={sessionId()!}
+                        messageID={message.id}
+                        lastUserMessageID={sessionMessages.lastUserMessage()?.id}
+                        stepsExpanded={store.stepsExpanded[message.id] ?? false}
+                        onStepsExpandedToggle={() => setStore("stepsExpanded", message.id, (x) => !x)}
+                        actions={{
+                          onEdit: messageActions.editMessage,
+                          onRestore: messageActions.restoreCheckpoint,
+                          onRetry: messageActions.retryMessage,
+                          onDelete: messageActions.deleteMessage,
+                        }}
+                        classes={{
+                          root: "min-w-0 w-full relative !h-auto",
+                          content: "flex flex-col justify-between !overflow-visible !h-auto",
+                          container: "w-full max-w-200 mx-auto px-6",
+                        }}
+                      />
+                    </div>
+                  )}
+                </For>
+              </div>
+              {/* Spacer to prevent content from being hidden behind sticky todo footer */}
+              <Show when={todoSpacerHeight() > 0}>
+                <div class="shrink-0" style={{ height: `${todoSpacerHeight()}px` }} />
+              </Show>
+              {/* Flexible spacer pushes footer to bottom for short content */}
+              <div class="flex-1" />
+              {/* Todo footer - sticky at bottom, hides when all complete */}
+              <SessionTodoFooter
+                todos={todos()}
+                collapsed={todoCollapsed()}
+                onToggleCollapse={() => setTodoCollapsed((c) => !c)}
+              />
             </div>
-            {/* Spacer to prevent content from being hidden behind sticky todo footer */}
-            <Show when={todos().some((t) => t.status !== "completed")}>
-              <div class="h-50 shrink-0" />
-            </Show>
-            {/* Flexible spacer pushes footer to bottom for short content */}
-            <div class="flex-1" />
-            {/* Todo footer - sticky at bottom, hides when all complete */}
-            <SessionTodoFooter
-              todos={todos()}
-              collapsed={todoCollapsed()}
-              onToggleCollapse={() => setTodoCollapsed((c) => !c)}
-            />
           </div>
         </div>
+
+        {/* Context panel overlay - slides in from right */}
+        <Show when={contextPanelState() !== "closed"}>
+          {/* Backdrop */}
+          <div
+            class="context-panel-backdrop absolute inset-0 bg-black/20 z-40"
+            data-state={contextPanelState()}
+            onClick={closeContextPanel}
+          />
+          {/* Panel */}
+          <div
+            class="context-panel absolute top-0 right-0 bottom-0 w-[min(400px,85%)] z-50 bg-surface-raised-stronger-non-alpha border-l border-border-base shadow-lg flex flex-col"
+            data-state={contextPanelState()}
+          >
+            <div class="flex items-center justify-between px-4 py-3 border-b border-border-base shrink-0">
+              <div class="text-14-medium text-text-strong">Context</div>
+              <button
+                type="button"
+                class="p-1 rounded hover:bg-surface-raised-base-hover text-text-weak hover:text-text-strong"
+                onClick={closeContextPanel}
+              >
+                <Icon name="close" size="small" />
+              </button>
+            </div>
+            <div class="flex-1 min-h-0 overflow-hidden">
+              <ContextTab
+                sessionId={sessionId()!}
+                sessionInfo={sessionInfo()}
+              />
+            </div>
+          </div>
+        </Show>
       </div>
     </Show>
   )
