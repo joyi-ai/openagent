@@ -10,7 +10,11 @@ console.log("=== publishing ===\n")
 
 if (!Script.preview) {
   const previous = await getLatestRelease()
-  notes = await buildNotes(previous, "HEAD")
+  if (previous) {
+    notes = await buildNotes(previous, "HEAD")
+  } else {
+    console.log("No previous release found, skipping changelog generation")
+  }
 }
 
 const pkgjsons = await Array.fromAsync(

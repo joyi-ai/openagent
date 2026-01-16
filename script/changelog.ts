@@ -17,13 +17,14 @@ export const team = [
   "opencode-agent[bot]",
 ]
 
-export async function getLatestRelease() {
+export async function getLatestRelease(): Promise<string | null> {
   return fetch("https://api.github.com/repos/joyi-ai/openpoo/releases/latest")
     .then((res) => {
+      if (res.status === 404) return null // No releases yet
       if (!res.ok) throw new Error(res.statusText)
       return res.json()
     })
-    .then((data: any) => data.tag_name.replace(/^v/, ""))
+    .then((data: any) => data ? data.tag_name.replace(/^v/, "") : null)
 }
 
 type Commit = {
