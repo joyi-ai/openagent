@@ -88,11 +88,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   init: (props: { defaultTheme?: string }) => {
     const [store, setStore] = createStore({
       themes: DEFAULT_THEMES as Record<string, DesktopTheme>,
-      themeId: props.defaultTheme ?? "oc-1",
+      themeId: props.defaultTheme ?? "tokyonight",
       colorScheme: "system" as ColorScheme,
       mode: getSystemMode(),
       gradientMode: "soft" as GradientMode,
-      gradientColor: "strong" as GradientColor,
+      gradientColor: "relative" as GradientColor,
       customGradient: null as CustomGradient | null,
       savedGradients: [] as CustomGradient[],
       previewThemeId: null as string | null,

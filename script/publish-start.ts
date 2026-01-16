@@ -58,7 +58,8 @@ if (!Script.preview) {
   await $`git cherry-pick HEAD..origin/dev`.nothrow()
   await $`git push origin HEAD --tags --no-verify --force-with-lease`.nothrow()
   await new Promise((resolve) => setTimeout(resolve, 5_000))
-  await $`gh release create v${Script.version} -d --title "v${Script.version}" --notes ${notes.join("\n") || "No notable changes"} ./packages/opencode/dist/*.zip ./packages/opencode/dist/*.tar.gz`
+  // Create draft release (desktop app builds will upload their installers)
+  await $`gh release create v${Script.version} -d --title "v${Script.version}" --notes ${notes.join("\n") || "No notable changes"}`
   const release = await $`gh release view v${Script.version} --json id,tagName`.json()
   output += `release=${release.id}\n`
   output += `tag=${release.tagName}\n`

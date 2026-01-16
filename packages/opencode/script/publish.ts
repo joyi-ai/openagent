@@ -36,14 +36,6 @@ await Bun.file(`./dist/${pkg.name}/package.json`).write(
   ),
 )
 
-// Skip npm publishing - just create archives for GitHub release
-if (!Script.preview) {
-  // Create archives for GitHub release
-  for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
-      await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
-    } else {
-      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
-    }
-  }
-}
+// CLI binaries are only needed as sidecars for desktop app
+// No standalone CLI archives needed for release
+console.log("CLI binaries built for desktop app sidecar")
