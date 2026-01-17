@@ -57,14 +57,12 @@ import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogEditProject } from "@/components/dialog-edit-project"
 import { DialogSelectServer } from "@/components/dialog-select-server"
-import { DialogSelectMcp } from "@/components/dialog-select-mcp"
 import { useCommand, type CommandOption } from "@/context/command"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { navStart } from "@/utils/perf"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
 import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
-import { SettingsDialog } from "@/components/settings-dialog"
 import { normalizeDirectoryKey } from "@/utils/directory"
 
 export default function Layout(props: ParentProps) {
@@ -109,15 +107,6 @@ export default function Layout(props: ParentProps) {
     light: "Light",
     dark: "Dark",
   }
-  const mcpDirectory = createMemo(() => {
-    if (params.dir) return base64Decode(params.dir)
-    const searchDir = searchParams.dir
-    if (searchDir) return Array.isArray(searchDir) ? searchDir[0] : searchDir
-    const first = layout.projects.list()[0]?.worktree
-    if (first) return first
-    return globalSync.data.path.directory
-  })
-
   function cycleTheme(direction = 1) {
     const ids = availableThemeEntries().map(([id]) => id)
     if (ids.length === 0) return
@@ -522,46 +511,6 @@ export default function Layout(props: ParentProps) {
 
   function openServer() {
     dialog.show(() => <DialogSelectServer />)
-  }
-
-  function openMcp() {
-    const directory = mcpDirectory()
-    if (!directory) {
-      showToast({
-        variant: "error",
-        title: "Open a project",
-        description: "Open a project to manage MCP servers.",
-      })
-      return
-    }
-    dialog.show(() => (
-      <SDKProvider directory={directory}>
-        <SyncProvider>
-          <DialogSelectMcp />
-        </SyncProvider>
-      </SDKProvider>
-    ))
-  }
-
-  function openSettings() {
-    const directory = mcpDirectory()
-    if (!directory) {
-      showToast({
-        variant: "error",
-        title: "Open a project",
-        description: "Open a project to access settings.",
-      })
-      return
-    }
-    dialog.show(() => (
-      <SDKProvider directory={directory}>
-        <SyncProvider>
-          <LocalProvider>
-            <SettingsDialog />
-          </LocalProvider>
-        </SyncProvider>
-      </SDKProvider>
-    ))
   }
 
   function navigateToProject(directory: string | undefined) {
