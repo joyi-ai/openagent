@@ -1053,6 +1053,21 @@ export function SessionTurn(
     reasoningLoading: false,
   })
 
+  const displayStatus = createMemo(() => commentary() ?? store.status)
+
+  let prevDisplayStatus: string | undefined
+  const [statusAnimating, setStatusAnimating] = createSignal(false)
+
+  createEffect(
+    on(displayStatus, (status) => {
+      if (prevDisplayStatus && status && prevDisplayStatus !== status) {
+        setStatusAnimating(true)
+        setTimeout(() => setStatusAnimating(false), 300)
+      }
+      prevDisplayStatus = status
+    }),
+  )
+
   createEffect(
     on(
       () => message()?.id,
@@ -1217,9 +1232,9 @@ export function SessionTurn(
                       <Message message={msg()} parts={parts()} actions={messageActions()} />
                     </div>
 
-                    {/* Working indicator - shows when working but no steps yet */}
+                    {/* Working indicator - shows while working */}
 
-                    <Show when={working() && allToolParts().length === 0}>
+                    <Show when={working()}>
                       <div
                         data-slot="session-turn-response-trigger"
                         data-disable-sticky={props.disableSticky || undefined}
@@ -1227,7 +1242,9 @@ export function SessionTurn(
                         <Button data-slot="session-turn-collapsible-trigger-content" variant="ghost" size="small">
                           <Spinner />
 
-                          <span>{store.status ?? "Considering next steps"}</span>
+                          <span data-slot="session-turn-status-text" data-animating={statusAnimating()}>
+                            {displayStatus() ?? "Considering next steps"}
+                          </span>
 
                           <span>·</span>
 
@@ -1256,15 +1273,11 @@ export function SessionTurn(
 
                         <Show when={stepsToolParts().length > 0}>
                           <div data-slot="session-turn-steps-section">
-                            <Show when={commentary()}>
-                              {(text) => <div data-slot="session-turn-commentary">{text()}</div>}
-                            </Show>
-
                             <StepsContainer
                               toolParts={stepsToolParts()}
                               expanded={props.stepsExpanded ?? false}
                               working={working()}
-                              status={store.status}
+                              status={displayStatus()}
                               duration={store.duration}
                               onToggle={props.onStepsExpandedToggle ?? (() => {})}
                             />
@@ -1305,7 +1318,7 @@ export function SessionTurn(
                                         data-streaming={working()}
                                         data-animating={reasoningAnimating()}
                                       >
-                                        {text()}
+                                        <Markdown text={text()} cacheKey={reasoningPartId()} />
                                       </div>
                                     )}
                                   </Show>
