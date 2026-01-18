@@ -270,7 +270,9 @@ export function SessionPane(props: SessionPaneProps) {
   const [spacerEl, setSpacerEl] = createSignal<HTMLElement | undefined>(undefined)
   const [spacer, setSpacer] = createSignal(0)
   const [jumpVisible, setJumpVisible] = createSignal(false)
+  const [tail, setTail] = createSignal<HTMLElement | undefined>(undefined)
   const lastScrollTop = { value: 0 }
+  const jump = { frame: 0, target: undefined as HTMLElement | undefined }
 
   const updateJumpButton = (target?: HTMLElement) => {
     const el = target ?? scrollEl()
@@ -278,13 +280,12 @@ export function SessionPane(props: SessionPaneProps) {
       setJumpVisible(false)
       return
     }
-    const last = sessionMessages.lastUserMessage()
-    if (!last) {
+    const node = tail()
+    if (!node) {
       setJumpVisible(false)
       return
     }
-    const node = el.querySelector(`[data-message-id="${last.id}"]`) as HTMLElement | null
-    if (!node) {
+    if (!el.contains(node)) {
       setJumpVisible(false)
       return
     }
@@ -293,6 +294,39 @@ export function SessionPane(props: SessionPaneProps) {
     const distance = rect.bottom - container.bottom
     setJumpVisible(distance > MESSAGE_WINDOW_BOTTOM_THRESHOLD)
   }
+
+  const scheduleJumpButton = (target?: HTMLElement) => {
+    const el = target ?? scrollEl()
+    if (!el) {
+      setJumpVisible(false)
+      return
+    }
+    jump.target = el
+    if (jump.frame) return
+    jump.frame = requestAnimationFrame(() => {
+      const next = jump.target
+      jump.frame = 0
+      jump.target = undefined
+      updateJumpButton(next)
+    })
+  }
+
+  createEffect(() => {
+    const el = scrollEl()
+    const msg = sessionMessages.lastUserMessage()
+    renderedUserMessages()
+    if (!el || !msg) {
+      setTail(undefined)
+      return
+    }
+    const node = el.querySelector(`[data-message-id="${msg.id}"]`) as HTMLElement | null
+    setTail(node ?? undefined)
+  })
+
+  onCleanup(() => {
+    const frame = jump.frame
+    if (frame) cancelAnimationFrame(frame)
+  })
 
   const handleJumpToBottom = () => {
     const el = scrollEl()
@@ -349,7 +383,7 @@ export function SessionPane(props: SessionPaneProps) {
     spacer()
     scrollEl()
     sessionMessages.lastUserMessage()
-    updateJumpButton()
+    scheduleJumpButton()
   })
 
   createEffect(() => {
@@ -465,7 +499,7 @@ export function SessionPane(props: SessionPaneProps) {
 
     const awayFromTop = el.scrollTop > MESSAGE_WINDOW_TOP_THRESHOLD
     if (awayFromTop && !store.windowExpandArmed) setStore("windowExpandArmed", true)
-    updateJumpButton(el)
+    scheduleJumpButton(el)
     if (awayFromTop) return
 
     if (store.windowExpandArmed) {
