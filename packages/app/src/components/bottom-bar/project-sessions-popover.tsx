@@ -9,7 +9,6 @@ import { base64Decode, base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { normalizeDirectoryKey } from "@/utils/directory"
 import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -170,7 +169,7 @@ function WorktreeSection(props: {
   const newSessionHref = createMemo(() => `/${base64Encode(props.directory)}/session`)
 
   return (
-    <Collapsible open={expanded()} onOpenChange={setExpanded} class="w-full">
+    <Collapsible open={expanded()} onOpenChange={setExpanded} variant="ghost" class="w-full">
       <Collapsible.Trigger class="group/trigger flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover cursor-pointer">
         <Icon
           name="chevron-right"
@@ -178,12 +177,13 @@ function WorktreeSection(props: {
           class="text-icon-base transition-transform group-data-[expanded]/trigger:rotate-90"
         />
         <span class="text-12-medium text-text-base flex-1 text-left truncate">{props.label}</span>
-        <span class="text-11-regular text-text-weak">{sessions().length}</span>
       </Collapsible.Trigger>
       <Collapsible.Content class="pl-2">
-        <For each={sessions()}>
-          {(session) => <SessionItem session={session} directory={props.directory} />}
-        </For>
+        <div class="flex flex-col gap-1">
+          <For each={sessions()}>
+            {(session) => <SessionItem session={session} directory={props.directory} />}
+          </For>
+        </div>
         <Show when={sessions().length === 0}>
           <A
             href={newSessionHref()}
@@ -208,29 +208,46 @@ function WorktreeSection(props: {
 }
 
 export function ProjectSessionsPopover(props: Props) {
-  const projectName = createMemo(() => props.project.name || getFilename(props.project.worktree))
+  const globalSync = useGlobalSync()
+  const [open, setOpen] = createSignal(false)
+  let contentRef: HTMLDivElement | undefined
+  let triggerRef: HTMLDivElement | undefined
 
   const worktrees = createMemo(() => {
     const main = { directory: props.project.worktree, label: "main", isMain: true }
-    const sandboxes = (props.project.sandboxes ?? []).map((dir) => ({
-      directory: dir,
-      label: getFilename(dir),
-      isMain: false,
-    }))
+    const sandboxes = (props.project.sandboxes ?? [])
+      .filter((dir) => {
+        // Filter out worktrees that no longer exist (have no sessions)
+        const [store] = globalSync.child(dir)
+        return store.session.some((s) => sameDirectory(s.directory, dir))
+      })
+      .map((dir) => ({
+        directory: dir,
+        label: getFilename(dir),
+        isMain: false,
+      }))
     return [main, ...sandboxes]
   })
 
+  createEffect(() => {
+    if (!open()) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (contentRef?.contains(target)) return
+      if (triggerRef?.contains(target)) return
+      setOpen(false)
+    }
+    document.addEventListener("click", handleClickOutside)
+    onCleanup(() => document.removeEventListener("click", handleClickOutside))
+  })
+
   return (
-    <Kobalte gutter={8} placement="top-start">
-      <Kobalte.Trigger as="div" class="cursor-pointer">
+    <Kobalte gutter={8} placement="top-start" open={open()} onOpenChange={setOpen}>
+      <Kobalte.Trigger as="div" class="cursor-pointer" ref={triggerRef}>
         {props.children}
       </Kobalte.Trigger>
       <Kobalte.Portal>
-        <Kobalte.Content class="z-50 w-72 max-h-96 overflow-y-auto rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95">
-          <div class="flex items-center justify-between px-2 pb-2 border-b border-border-weak-base mb-2">
-            <span class="text-13-medium text-text-strong truncate">{projectName()}</span>
-            <Kobalte.CloseButton as={IconButton} icon="close" variant="ghost" />
-          </div>
+        <Kobalte.Content ref={contentRef} class="z-50 w-72 max-h-96 overflow-y-auto rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95">
           <div class="flex flex-col gap-1">
             <For each={worktrees()}>
               {(wt) => (

@@ -1235,97 +1235,99 @@ export function SessionTurn(
                     {/* Working indicator - shows while working */}
 
                     <Show when={working()}>
-                      <div
-                        data-slot="session-turn-response-trigger"
-                        data-disable-sticky={props.disableSticky || undefined}
-                      >
-                        <Button data-slot="session-turn-collapsible-trigger-content" variant="ghost" size="small">
-                          <Spinner />
+                      <div data-slot="session-turn-assistant-working">
+                        <div
+                          data-slot="session-turn-response-trigger"
+                          data-disable-sticky={props.disableSticky || undefined}
+                        >
+                          <Button data-slot="session-turn-collapsible-trigger-content" variant="ghost" size="small">
+                            <Spinner />
 
-                          <span data-slot="session-turn-status-text" data-animating={statusAnimating()}>
-                            {displayStatus() ?? "Considering next steps"}
-                          </span>
+                            <span data-slot="session-turn-status-text" data-animating={statusAnimating()}>
+                              {displayStatus() ?? "Considering next steps"}
+                            </span>
 
-                          <span>·</span>
+                            <span>·</span>
 
-                          <span>{store.duration}</span>
-                        </Button>
-                      </div>
-                    </Show>
+                            <span>{store.duration}</span>
+                          </Button>
+                        </div>
 
-                    <Show when={working() && (taskAgents().length > 0 || stepsToolParts().length > 0)}>
-                      <div data-slot="session-turn-steps-group">
-                        <Show when={taskAgents().length > 0}>
-                          <div data-slot="session-turn-task-agents">
-                            <Index each={taskAgents()}>
-                              {(agent) => (
-                                <div data-slot="session-turn-task-agent" data-done={agent().done ? "true" : "false"}>
-                                  <span data-slot="session-turn-task-agent-text">
-                                    {agent().name}: {agent().status}
-                                  </span>
-                                </div>
-                              )}
-                            </Index>
-                          </div>
-                        </Show>
+                        <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
+                          <div data-slot="session-turn-steps-group">
+                            <Show when={taskAgents().length > 0}>
+                              <div data-slot="session-turn-task-agents">
+                                <Index each={taskAgents()}>
+                                  {(agent) => (
+                                    <div data-slot="session-turn-task-agent" data-done={agent().done ? "true" : "false"}>
+                                      <span data-slot="session-turn-task-agent-text">
+                                        {agent().name}: {agent().status}
+                                      </span>
+                                    </div>
+                                  )}
+                                </Index>
+                              </div>
+                            </Show>
 
-                        {/* Steps Container - unified for both collapsed and expanded */}
+                            {/* Steps Container - unified for both collapsed and expanded */}
 
-                        <Show when={stepsToolParts().length > 0}>
-                          <div data-slot="session-turn-steps-section">
-                            <StepsContainer
-                              toolParts={stepsToolParts()}
-                              expanded={props.stepsExpanded ?? false}
-                              working={working()}
-                              status={displayStatus()}
-                              duration={store.duration}
-                              onToggle={props.onStepsExpandedToggle ?? (() => {})}
-                            />
+                            <Show when={stepsToolParts().length > 0}>
+                              <div data-slot="session-turn-steps-section">
+                                <StepsContainer
+                                  toolParts={stepsToolParts()}
+                                  expanded={props.stepsExpanded ?? false}
+                                  working={working()}
+                                  status={displayStatus()}
+                                  duration={store.duration}
+                                  onToggle={props.onStepsExpandedToggle ?? (() => {})}
+                                />
 
-                            <Show when={hasReasoning()}>
-                              <div data-slot="session-turn-reasoning-section">
-                                <Show when={!working()}>
-                                  <button
-                                    type="button"
-                                    data-slot="session-turn-reasoning-trigger"
-                                    onMouseEnter={requestReasoning}
-                                    onFocus={requestReasoning}
-                                    onClick={() => {
-                                      requestReasoning()
-                                      setStore("reasoningExpanded", (x) => !x)
-                                    }}
-                                  >
-                                    Reasoning
-                                  </button>
-                                </Show>
-
-                                <Show when={working() || store.reasoningExpanded}>
-                                  <Show
-                                    when={reasoning()}
-                                    fallback={
-                                      <div data-slot="session-turn-reasoning">
-                                        <div data-slot="session-turn-reasoning-body">
-                                          <Show when={store.reasoningLoading}>
-                                            <Spinner />
-                                          </Show>
-                                          <Show when={!store.reasoningLoading}>Loading reasoning…</Show>
-                                        </div>
-                                      </div>
-                                    }
-                                  >
-                                    {(text) => (
-                                      <div
-                                        ref={(el) => setStore("reasoningRef", el)}
-                                        data-slot="session-turn-reasoning"
-                                        data-streaming={working()}
-                                        data-animating={reasoningAnimating()}
+                                <Show when={hasReasoning()}>
+                                  <div data-slot="session-turn-reasoning-section">
+                                    <Show when={!working()}>
+                                      <button
+                                        type="button"
+                                        data-slot="session-turn-reasoning-trigger"
+                                        onMouseEnter={requestReasoning}
+                                        onFocus={requestReasoning}
+                                        onClick={() => {
+                                          requestReasoning()
+                                          setStore("reasoningExpanded", (x) => !x)
+                                        }}
                                       >
-                                        <div data-slot="session-turn-reasoning-body">
-                                          <Markdown text={text()} cacheKey={reasoningPartId()} />
-                                        </div>
-                                      </div>
-                                    )}
-                                  </Show>
+                                        Reasoning
+                                      </button>
+                                    </Show>
+
+                                    <Show when={working() || store.reasoningExpanded}>
+                                      <Show
+                                        when={reasoning()}
+                                        fallback={
+                                          <div data-slot="session-turn-reasoning">
+                                            <div data-slot="session-turn-reasoning-body">
+                                              <Show when={store.reasoningLoading}>
+                                                <Spinner />
+                                              </Show>
+                                              <Show when={!store.reasoningLoading}>Loading reasoning…</Show>
+                                            </div>
+                                          </div>
+                                        }
+                                      >
+                                        {(text) => (
+                                          <div
+                                            ref={(el) => setStore("reasoningRef", el)}
+                                            data-slot="session-turn-reasoning"
+                                            data-streaming={working()}
+                                            data-animating={reasoningAnimating()}
+                                          >
+                                            <div data-slot="session-turn-reasoning-body">
+                                              <Markdown text={text()} cacheKey={reasoningPartId()} />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Show>
+                                    </Show>
+                                  </div>
                                 </Show>
                               </div>
                             </Show>

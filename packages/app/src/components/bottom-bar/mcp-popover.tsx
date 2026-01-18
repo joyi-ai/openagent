@@ -17,7 +17,7 @@ function McpContent() {
 
 function McpPopoverInner(props: ParentProps) {
   return (
-    <Kobalte gutter={8} placement="top-end">
+    <Kobalte gutter={8} placement="top-end" modal={false}>
       <Kobalte.Trigger as="div" class="cursor-pointer">
         {props.children}
       </Kobalte.Trigger>

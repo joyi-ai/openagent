@@ -35,13 +35,7 @@
   }
 
   [data-slot="session-turn-response-trigger"] {
-    position: sticky;
-    top: 32px;
-    z-index: 20;
-    width: calc(100% + 9px);
-    margin-left: -9px;
-    padding-left: 9px;
-    padding-bottom: 8px;
+    width: 100%;
 
     &[data-disable-sticky] {
       position: static;
@@ -320,7 +314,6 @@
     align-items: center;
     gap: 4px;
     color: var(--text-weak);
-    margin-left: -9px;
 
     [data-component="spinner"] {
       flex-shrink: 0;
@@ -395,6 +388,19 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  [data-slot="session-turn-assistant-working"] {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
+    border: 1px solid var(--border-strong-base);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    overflow: hidden;
   }
 
   [data-slot="session-turn-steps-group"] {
@@ -584,9 +590,6 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  background-color: color-mix(in srgb, var(--surface-inset-base) 15%, transparent);
-  border: 1px solid var(--border-strong-base);
-  border-radius: var(--radius-md);
   overflow: hidden;
 
   [data-slot="steps-track"] {
@@ -620,8 +623,8 @@
       content: "";
       position: absolute;
       bottom: 0;
-      left: 24px;
-      right: 24px;
+      left: 12px;
+      right: 12px;
       height: 1px;
       background: linear-gradient(
         90deg,
@@ -641,7 +644,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: 4px;
-    padding: 6px 12px;
+    padding: 6px 0;
     font-family: var(--font-family-sans);
 
     /* Tapered top border */
@@ -649,8 +652,8 @@
       content: "";
       position: absolute;
       top: 0;
-      left: 24px;
-      right: 24px;
+      left: 12px;
+      right: 12px;
       height: 1px;
       background: linear-gradient(
         90deg,
