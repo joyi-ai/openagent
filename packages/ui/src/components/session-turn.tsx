@@ -1253,7 +1253,7 @@ export function SessionTurn(
                       </div>
                     </Show>
 
-                    <Show when={taskAgents().length > 0 || stepsToolParts().length > 0}>
+                    <Show when={working() && (taskAgents().length > 0 || stepsToolParts().length > 0)}>
                       <div data-slot="session-turn-steps-group">
                         <Show when={taskAgents().length > 0}>
                           <div data-slot="session-turn-task-agents">
