@@ -9,6 +9,7 @@ import { base64Decode, base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { normalizeDirectoryKey } from "@/utils/directory"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -247,8 +248,15 @@ export function ProjectSessionsPopover(props: Props) {
         {props.children}
       </Kobalte.Trigger>
       <Kobalte.Portal>
-        <Kobalte.Content ref={contentRef} class="z-50 w-72 max-h-96 overflow-y-auto rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95">
-          <div class="flex flex-col gap-1">
+        <Kobalte.Content ref={contentRef} class="z-50 w-80 rounded-lg border border-border-base bg-background-base shadow-lg p-3 animate-in fade-in-0 zoom-in-95">
+          <div class="flex items-center justify-between pb-2 border-b border-border-weak-base mb-2">
+            <div class="flex items-center gap-2">
+              <Icon name="history" size="small" class="text-icon-base" />
+              <span class="text-13-medium text-text-strong">Sessions</span>
+            </div>
+            <Kobalte.CloseButton as={IconButton} icon="close" variant="ghost" />
+          </div>
+          <div class="max-h-80 overflow-y-auto flex flex-col gap-1">
             <For each={worktrees()}>
               {(wt) => (
                 <WorktreeSection
