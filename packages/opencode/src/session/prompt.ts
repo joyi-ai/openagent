@@ -1046,7 +1046,7 @@ export namespace SessionPrompt {
       },
     })
 
-    for (const item of await ToolRegistry.tools(input.model.providerID, input.agent, input.session.id)) {
+    for (const item of await ToolRegistry.tools(input.model, input.agent, input.session.id)) {
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
       tools[item.id] = tool({
         id: item.id as any,
@@ -2111,16 +2111,6 @@ export namespace SessionPrompt {
             },
           ]
         : [...templateParts, ...(input.parts ?? [])]
-
-    await Plugin.trigger(
-      "command.execute.before",
-      {
-        command: input.command,
-        sessionID: input.sessionID,
-        arguments: input.arguments,
-      },
-      { parts },
-    )
 
     const result = (await prompt({
       sessionID: input.sessionID,

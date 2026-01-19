@@ -122,7 +122,12 @@ export namespace ToolRegistry {
     return all().then((x) => x.map((t) => t.id))
   }
 
-  export async function tools(providerID: string, agent?: Agent.Info, sessionID?: string) {
+  export async function tools(
+    model: { providerID: string; id?: string; modelID?: string },
+    agent?: Agent.Info,
+    sessionID?: string,
+  ) {
+    const modelID = model.id ?? model.modelID ?? ""
     const tools = await all()
     const result = await Promise.all(
       tools
@@ -133,8 +138,7 @@ export namespace ToolRegistry {
           }
 
           // use apply tool in same format as codex
-          const usePatch =
-            model.modelID.includes("gpt-") && !model.modelID.includes("oss") && !model.modelID.includes("gpt-4")
+          const usePatch = modelID.includes("gpt-") && !modelID.includes("oss") && !modelID.includes("gpt-4")
           if (t.id === "apply_patch") return usePatch
           if (t.id === "edit" || t.id === "write") return !usePatch
 

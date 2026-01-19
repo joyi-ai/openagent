@@ -75,7 +75,7 @@ export const ExperimentalRoutes = lazy(() =>
       ),
       async (c) => {
         const { provider, model } = c.req.valid("query")
-        const tools = await ToolRegistry.tools({ providerID: provider, modelID: model })
+        const tools = await ToolRegistry.tools({ providerID: provider, id: model })
         return c.json(
           tools.map((t) => ({
             id: t.id,

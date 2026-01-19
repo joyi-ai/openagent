@@ -838,8 +838,8 @@ export namespace Server {
             }),
           ),
           async (c) => {
-            const { provider } = c.req.valid("query")
-            const tools = await ToolRegistry.tools(provider)
+            const { provider, model } = c.req.valid("query")
+            const tools = await ToolRegistry.tools({ providerID: provider, id: model })
             return c.json(
               tools.map((t) => ({
                 id: t.id,
