@@ -3,23 +3,7 @@ import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
-import { useSync, type SkillInfo } from "@/context/sync"
-import type { PermissionActionConfig, PermissionObjectConfig, PermissionRuleConfig, PermissionConfig } from "@opencode-ai/sdk/v2/client"
-
-type PermissionRule = PermissionRuleConfig
-
-function wildcardMatch(pattern: string, value: string): boolean {
-  if (pattern === "*") return true
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")
-  const regex = new RegExp(`^${escaped}$`)
-  return regex.test(value)
-}
-
-function normalizeRule(rule: PermissionRule | undefined): PermissionObjectConfig {
-  if (!rule) return {}
-  if (typeof rule === "string") return { "*": rule }
-  return { ...rule }
-}
+import { useSync } from "@/context/sync"
 
 function inferSource(location: string): string {
   const normalized = location.replace(/\\\\/g, "/")
@@ -40,61 +24,41 @@ export const SkillsPanel: Component = () => {
   const sync = useSync()
   const [saving, setSaving] = createSignal<string | null>(null)
 
-  // Read pre-fetched skills from sync data (fetched during app bootstrap)
-  const skills = () => sync.data.skill
+  // Read disabled skills directly from config (same pattern as opencode-plugins-panel)
+  const disabledList = () => (sync.data.config as { disabled_skills?: string[] }).disabled_skills ?? []
 
-  const permission = createMemo<Record<string, PermissionRule>>(() => {
-    const current = sync.data.config.permission
-    if (!current) return {}
-    if (typeof current === "string") return { "*": current }
-    return current as Record<string, PermissionRule>
-  })
+  const updateDisabledSkills = async (nextDisabled: string[]) => {
+    const result = await sdk.client.config
+      .update({ config: { disabled_skills: nextDisabled } as Record<string, unknown> })
+      .then((res) => ({ success: true as const, data: res.data }))
+      .catch((err) => ({ success: false as const, error: err as Error }))
 
-  const skillRule = createMemo(() => normalizeRule(permission().skill))
-
-  const resolveAction = (rules: PermissionObjectConfig, name: string) => {
-    let action: PermissionActionConfig | undefined
-    for (const [pattern, value] of Object.entries(rules)) {
-      if (wildcardMatch(pattern, name)) action = value
-    }
-    return action
-  }
-
-  const skillAction = (name: string) => resolveAction(skillRule(), name)
-
-  const isEnabled = (name: string) => skillAction(name) !== "deny"
-
-  const updatePermission = async (nextRule: PermissionObjectConfig) => {
-    const nextPermission = { ...permission(), skill: nextRule } as PermissionConfig
-    const error = await sdk.client.config
-      .update({ config: { permission: nextPermission } })
-      .then(() => undefined)
-      .catch((err) => err as Error)
-    if (error) {
+    if (!result.success) {
       showToast({
         variant: "error",
         title: "Failed to update skills",
-        description: error.message,
+        description: result.error.message,
       })
       return false
     }
-    sync.set("config", "permission", nextPermission)
+
+    sync.set("config", "disabled_skills" as never, nextDisabled as never)
     return true
   }
 
   const toggleSkill = async (name: string, nextEnabled: boolean) => {
     if (saving()) return
     setSaving(name)
-    const nextRule = normalizeRule(permission().skill)
+
+    // Compute the next disabled list from current config (same pattern as opencode-plugins)
+    const disabled = new Set(disabledList())
     if (nextEnabled) {
-      delete nextRule[name]
-      if (resolveAction(nextRule, name) === "deny") {
-        nextRule[name] = "allow"
-      }
+      disabled.delete(name)
     } else {
-      nextRule[name] = "deny"
+      disabled.add(name)
     }
-    const success = await updatePermission(nextRule)
+
+    const success = await updateDisabledSkills(Array.from(disabled))
     if (success) {
       showToast({
         variant: "success",
@@ -105,14 +69,16 @@ export const SkillsPanel: Component = () => {
     setSaving(null)
   }
 
+  // Build items list from skills and disabled list
   const items = createMemo(() => {
-    const rules = skillRule()
-    return (skills() ?? [])
+    const disabled = new Set(disabledList())
+    const skillList = sync.data.skill ?? []
+    return skillList
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((skill) => ({
         ...skill,
-        enabled: resolveAction(rules, skill.name) !== "deny",
+        enabled: !disabled.has(skill.name),
         source: inferSource(skill.location),
       }))
   })
@@ -123,7 +89,7 @@ export const SkillsPanel: Component = () => {
         search={{ placeholder: "Search skills", autofocus: false }}
         emptyMessage="No skills found"
         key={(x) => x?.name ?? ""}
-        items={items()}
+        items={items}
         filterKeys={["name", "description", "source"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         onSelect={(x) => {

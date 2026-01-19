@@ -1667,6 +1667,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
+    // Handle Escape to close popover or abort
+    if (event.key === "Escape") {
+      if (store.popover) {
+        setStore("popover", null)
+        event.preventDefault()
+        return
+      }
+      if (working()) {
+        abort()
+        event.preventDefault()
+      }
+      return
+    }
+
     const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
     const alt = event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey
 

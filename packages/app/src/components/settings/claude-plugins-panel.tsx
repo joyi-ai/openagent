@@ -66,7 +66,7 @@ export const ClaudePluginsPanel: Component<ClaudePluginsPanelProps> = () => {
         search={{ placeholder: "Search", autofocus: false }}
         emptyMessage="No plugins installed"
         key={(x) => x?.id ?? ""}
-        items={items()}
+        items={items}
         filterKeys={["name", "description"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         onSelect={(x) => {

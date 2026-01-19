@@ -4,6 +4,7 @@ import { Tool } from "./tool"
 import { Skill } from "../skill"
 import { ConfigMarkdown } from "../config/markdown"
 import { PermissionNext } from "../permission/next"
+import { Config } from "../config/config"
 
 const parameters = z.object({
   name: z.string().describe("The skill identifier from available_skills (e.g., 'code-review' or 'category/helper')"),
@@ -11,15 +12,21 @@ const parameters = z.object({
 
 export const SkillTool = Tool.define("skill", async (ctx) => {
   const skills = await Skill.all()
+  const config = await Config.get()
+  const disabledSkills = new Set(config.disabled_skills ?? [])
 
-  // Filter skills by agent permissions if agent provided
+  // Filter skills by disabled_skills config and agent permissions
   const agent = ctx?.agent
-  const accessibleSkills = agent
-    ? skills.filter((skill) => {
-        const rule = PermissionNext.evaluate("skill", skill.name, agent.permission)
-        return rule.action !== "deny"
-      })
-    : skills
+  const accessibleSkills = skills.filter((skill) => {
+    // Check if skill is explicitly disabled in config
+    if (disabledSkills.has(skill.name)) return false
+    // Check agent permissions if agent provided
+    if (agent) {
+      const rule = PermissionNext.evaluate("skill", skill.name, agent.permission)
+      return rule.action !== "deny"
+    }
+    return true
+  })
 
   const description =
     accessibleSkills.length === 0

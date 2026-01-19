@@ -881,6 +881,7 @@ export namespace Config {
         .array(z.string())
         .optional()
         .describe("Disable OpenCode plugins by name or specifier"),
+      disabled_skills: z.array(z.string()).optional().describe("Disable skills by name"),
       snapshot: z.boolean().optional(),
       worktree: z
         .object({

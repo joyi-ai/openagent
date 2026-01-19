@@ -147,7 +147,7 @@ export const OpenCodePluginsPanel: Component = () => {
         search={{ placeholder: "Search", autofocus: false }}
         emptyMessage="No plugins found"
         key={(x) => x?.spec ?? ""}
-        items={items()}
+        items={items}
         filterKeys={["name", "spec"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         onSelect={(x) => {
