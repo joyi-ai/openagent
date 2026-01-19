@@ -227,7 +227,7 @@ const createPlanModeResponder = (sync: SyncContext, sdk: ReturnType<typeof useSD
       model,
     })
 
-    const variant = createdSession.variant ?? sourceSession.variant
+    const variant = createdSession.variant ?? sourceSession.variant ?? undefined
     const thinking = createdSession.thinking ?? sourceSession.thinking
     const mode = sourceSession.mode ?? createdSession.mode
 

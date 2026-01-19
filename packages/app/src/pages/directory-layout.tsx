@@ -220,8 +220,8 @@ export default function Layout(props: ParentProps) {
                 model,
               })
 
-              const variant = createdSession.variant ?? sourceSession.variant
-              const thinking = createdSession.thinking ?? sourceSession.thinking
+            const variant = createdSession.variant ?? sourceSession.variant ?? undefined
+            const thinking = createdSession.thinking ?? sourceSession.thinking
               const mode = sourceSession.mode ?? createdSession.mode
 
               sdk.client.session
