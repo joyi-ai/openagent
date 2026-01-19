@@ -17,6 +17,7 @@ OpenCode searches these locations:
 - Global config: `~/.config/opencode/skill/<name>/SKILL.md`
 - Project Claude-compatible: `.claude/skills/<name>/SKILL.md`
 - Global Claude-compatible: `~/.claude/skills/<name>/SKILL.md`
+- Codex global: `$CODEX_HOME/skills/<name>/SKILL.md`
 
 ---
 
@@ -26,6 +27,7 @@ For project-local paths, OpenCode walks up from your current working directory u
 It loads any matching `skill/*/SKILL.md` in `.opencode/` and any matching `.claude/skills/*/SKILL.md` along the way.
 
 Global definitions are also loaded from `~/.config/opencode/skill/*/SKILL.md` and `~/.claude/skills/*/SKILL.md`.
+Codex global definitions are loaded from `$CODEX_HOME/skills/*/SKILL.md` (defaults to `~/.local/share/Aura/codex` when not set).
 
 ---
 

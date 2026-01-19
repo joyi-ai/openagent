@@ -1,3 +1,4 @@
+import path from "path"
 import z from "zod"
 import { Config } from "../config/config"
 import { Instance } from "../project/instance"
@@ -38,12 +39,13 @@ export namespace Skill {
 
   const OPENCODE_SKILL_GLOB = new Bun.Glob("{skill,skills}/**/SKILL.md")
   const CLAUDE_SKILL_GLOB = new Bun.Glob("skills/**/SKILL.md")
+  const CODEX_SKILL_GLOB = new Bun.Glob("skills/**/SKILL.md")
 
   export const state = Instance.state(async () => {
     const skills: Record<string, Info> = {}
-    const sources: Record<string, "claude" | "opencode" | "claude-plugin"> = {}
+    const sources: Record<string, "claude" | "opencode" | "codex" | "claude-plugin"> = {}
 
-    const addSkill = async (match: string, source: "claude" | "opencode") => {
+    const addSkill = async (match: string, source: "claude" | "opencode" | "codex") => {
       const md = await ConfigMarkdown.parse(match)
       if (!md) {
         return
@@ -117,6 +119,26 @@ export namespace Skill {
       }
     }
 
+    const codexHome = process.env.CODEX_HOME || path.join(Global.Path.data, "codex")
+    if (await Filesystem.exists(codexHome)) {
+      const matches = await Array.fromAsync(
+        CODEX_SKILL_GLOB.scan({
+          cwd: codexHome,
+          absolute: true,
+          onlyFiles: true,
+          followSymlinks: true,
+          dot: true,
+        }),
+      ).catch((error) => {
+        log.error("failed codex directory scan for skills", { dir: codexHome, error })
+        return []
+      })
+
+      for (const match of matches) {
+        await addSkill(match, "codex")
+      }
+    }
+
     // Load skills from Claude Code plugins
     for (const skill of await ClaudePlugin.skills()) {
       if (skills[skill.name]) {
@@ -151,6 +173,7 @@ export namespace Skill {
       const source = x.sources[name]
       if (!source) return false
       if (source === "opencode") return false
+      if (source === "codex") return false
       return true
     })
   }
