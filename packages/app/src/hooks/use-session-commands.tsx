@@ -59,7 +59,7 @@ export function useSessionCommands(options: UseSessionCommandsOptions): void {
       keybind: "mod+p",
       slash: "open",
       disabled: !enabled(),
-      onSelect: () => dialog.show(() => <DialogSelectFile sessionKey={options.tabsKey?.()} />),
+      onSelect: () => dialog.show(() => <DialogSelectFile />),
     },
     {
       id: "terminal.toggle",
