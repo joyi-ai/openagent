@@ -356,8 +356,8 @@ export function SessionPane(props: SessionPaneProps) {
       setSpacer(0)
       return
     }
-    const nodes = el.querySelectorAll("[data-message-id]")
-    const last = nodes[nodes.length - 1] as HTMLElement | undefined
+    // Use cached tail element instead of querying all messages
+    const last = tail()
     if (!last) {
       setSpacer(0)
       return

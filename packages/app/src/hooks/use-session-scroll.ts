@@ -42,6 +42,8 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
   let pendingSnap = false
   let lastMessageCount = 0
   let messageCount = 0
+  let mutationFrame = 0
+  let resizeFrame = 0
   const lastMessageId = { value: "" }
   const lastMessageIdAtSnap = { value: "" }
   const [containerHeight, setContainerHeight] = createSignal(0)
@@ -60,22 +62,16 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     })
   }
 
-  function getMessageCount() {
-    if (!scrollEl) return 0
-    return scrollEl.querySelectorAll("[data-message-id]").length
-  }
-
-  function getLastMessageId() {
-    if (!scrollEl) return ""
-    const messages = scrollEl.querySelectorAll("[data-message-id]")
-    const lastMessage = messages[messages.length - 1] as HTMLElement | undefined
-    if (!lastMessage) return ""
-    return lastMessage.dataset.messageId ?? ""
+  function getMessageElements() {
+    if (!scrollEl) return []
+    return scrollEl.querySelectorAll("[data-message-id]")
   }
 
   function updateMessageState() {
-    const currentCount = getMessageCount()
-    const currentId = getLastMessageId()
+    const messages = getMessageElements()
+    const currentCount = messages.length
+    const lastMessage = messages[messages.length - 1] as HTMLElement | undefined
+    const currentId = lastMessage?.dataset.messageId ?? ""
     const countChanged = currentCount !== messageCount
     const idChanged = currentId !== lastMessageId.value
     if (!countChanged && !idChanged) return
@@ -139,15 +135,25 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       checkForNewMessageAndSnap()
     }
 
-    options.onContentResize?.()
+    // Throttle resize callbacks to one per animation frame
+    if (resizeFrame) return
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0
+      options.onContentResize?.()
+    })
   }
 
   function handleMutation() {
-    // Check for new messages when DOM changes
-    updateMessageState()
-    if (pendingSnap) {
-      checkForNewMessageAndSnap()
-    }
+    // Throttle mutations to one update per animation frame
+    if (mutationFrame) return
+    mutationFrame = requestAnimationFrame(() => {
+      mutationFrame = 0
+      // Check for new messages when DOM changes
+      updateMessageState()
+      if (pendingSnap) {
+        checkForNewMessageAndSnap()
+      }
+    })
   }
 
   function handleScroll(e: Event) {
@@ -199,9 +205,12 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
       // Watch for DOM changes to detect new messages
       mutationObserver = new MutationObserver(handleMutation)
       mutationObserver.observe(el, { childList: true, subtree: true })
-      messageCount = getMessageCount()
+      // Initialize message state
+      const messages = getMessageElements()
+      messageCount = messages.length
       lastMessageCount = messageCount
-      lastMessageId.value = getLastMessageId()
+      const lastMsg = messages[messages.length - 1] as HTMLElement | undefined
+      lastMessageId.value = lastMsg?.dataset.messageId ?? ""
       // Track container height for spacer calculation
       setContainerHeight(el.clientHeight)
       containerResizeObserver = new ResizeObserver((entries) => {
@@ -271,6 +280,12 @@ export function useSessionScroll(options: UseSessionScrollOptions): UseSessionSc
     }
     if (containerResizeObserver) {
       containerResizeObserver.disconnect()
+    }
+    if (mutationFrame) {
+      cancelAnimationFrame(mutationFrame)
+    }
+    if (resizeFrame) {
+      cancelAnimationFrame(resizeFrame)
     }
   })
 
