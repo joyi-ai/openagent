@@ -97,8 +97,8 @@
     "/global/worktree": {
       "delete": {
         "operationId": "global.worktree.delete",
-        "summary": "Delete managed worktree",
-        "description": "Delete a managed git worktree by its path. Does not require project context.",
+        "summary": "Delete worktree",
+        "description": "Delete a git worktree by its path. Does not require project context.",
         "responses": {
           "200": {
             "description": "Worktree deleted",
@@ -4998,6 +4998,68 @@
         ]
       }
     },
+    "/planmode/{requestID}/reject": {
+      "post": {
+        "operationId": "planmode.reject",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "directory",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestID",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "summary": "Reject plan review",
+        "description": "Reject a plan review request from Claude.",
+        "responses": {
+          "200": {
+            "description": "Plan rejected successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.planmode.reject({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/planmode": {
       "get": {
         "operationId": "planmode.list",
@@ -9797,6 +9859,30 @@
           "properties"
         ]
       },
+      "Event.planmode.rejected": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "planmode.rejected"
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "requestID": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestID"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties"
+        ]
+      },
       "Pty": {
         "type": "object",
         "properties": {
@@ -10428,6 +10514,9 @@
           },
           {
             "$ref": "#/components/schemas/Event.planmode.responded"
+          },
+          {
+            "$ref": "#/components/schemas/Event.planmode.rejected"
           },
           {
             "$ref": "#/components/schemas/Event.pty.created"

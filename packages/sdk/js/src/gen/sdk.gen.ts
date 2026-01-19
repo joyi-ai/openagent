@@ -84,6 +84,8 @@ import type {
   PermissionRuleset,
   PlanmodeListForSessionResponses,
   PlanmodeListResponses,
+  PlanmodeRejectErrors,
+  PlanmodeRejectResponses,
   PlanmodeReplyErrors,
   PlanmodeReplyResponses,
   ProjectCurrentResponses,
@@ -128,6 +130,8 @@ import type {
   SessionCreateErrors,
   SessionCreateResponses,
   SessionDeleteErrors,
+  SessionDeleteMessagesErrors,
+  SessionDeleteMessagesResponses,
   SessionDeleteResponses,
   SessionDiffErrors,
   SessionDiffResponses,
@@ -227,9 +231,9 @@ class HeyApiRegistry<T> {
 
 export class Worktree extends HeyApiClient {
   /**
-   * Delete managed worktree
+   * Delete worktree
    *
-   * Delete a managed git worktree by its path. Does not require project context.
+   * Delete a git worktree by its path. Does not require project context.
    */
   public delete<ThrowOnError extends boolean = false>(
     parameters: {
@@ -2238,6 +2242,47 @@ export class Session extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Delete messages
+   *
+   * Delete messages starting from a specific message without reverting file changes.
+   */
+  public deleteMessages<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "body", key: "messageID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionDeleteMessagesResponses,
+      SessionDeleteMessagesErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/deleteMessages",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Message extends HeyApiClient {
@@ -2601,6 +2646,36 @@ export class Planmode extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Reject plan review
+   *
+   * Reject a plan review request from Claude.
+   */
+  public reject<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PlanmodeRejectResponses, PlanmodeRejectErrors, ThrowOnError>({
+      url: "/planmode/{requestID}/reject",
+      ...options,
+      ...params,
     })
   }
 

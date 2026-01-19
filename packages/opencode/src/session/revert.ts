@@ -125,4 +125,28 @@ export namespace SessionRevert {
       draft.revert = undefined
     })
   }
+
+  export const DeleteInput = z.object({
+    sessionID: Identifier.schema("session"),
+    messageID: Identifier.schema("message"),
+  })
+  export type DeleteInput = z.infer<typeof DeleteInput>
+
+  export async function deleteMessages(input: DeleteInput) {
+    const existing = await Session.get(input.sessionID)
+    return Instance.provide({
+      directory: existing.directory,
+      fn: async () => {
+        SessionPrompt.assertNotBusy(input.sessionID)
+        const all = await Session.messages({ sessionID: input.sessionID })
+        const [preserve, remove] = splitWhen(all, (x) => x.info.id === input.messageID)
+
+        for (const msg of remove) {
+          await Session.removeMessage({ sessionID: input.sessionID, messageID: msg.info.id })
+        }
+
+        return Session.get(input.sessionID)
+      },
+    })
+  }
 }

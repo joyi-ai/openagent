@@ -229,7 +229,7 @@ export function useMessageActions() {
     await abortIfBusy(message.sessionID)
     prompt.action.clear()
     const response = await sdk.client.session
-      .revert({ sessionID: message.sessionID, messageID: message.id })
+      .deleteMessages({ sessionID: message.sessionID, messageID: message.id })
       .catch((e) => {
         showToast({
           variant: "error",
@@ -246,15 +246,7 @@ export function useMessageActions() {
           description: (response.error as any)?.message ?? "Please try again.",
         })
       }
-      return
     }
-    await sdk.client.session.cleanup({ sessionID: message.sessionID }).catch((e) => {
-      showToast({
-        variant: "error",
-        title: "Failed to finalize deletion",
-        description: e.message ?? "Please try again.",
-      })
-    })
   }
 
   return {

@@ -755,6 +755,13 @@ export type EventPlanmodeResponded = {
   }
 }
 
+export type EventPlanmodeRejected = {
+  type: "planmode.rejected"
+  properties: {
+    requestID: string
+  }
+}
+
 export type Pty = {
   id: string
   title: string
@@ -937,6 +944,7 @@ export type Event =
   | EventAskuserCancelled
   | EventPlanmodeReview
   | EventPlanmodeResponded
+  | EventPlanmodeRejected
   | EventPtyCreated
   | EventPtyUpdated
   | EventPtyExited
@@ -4240,6 +4248,41 @@ export type SessionCleanupResponses = {
 
 export type SessionCleanupResponse = SessionCleanupResponses[keyof SessionCleanupResponses]
 
+export type SessionDeleteMessagesData = {
+  body?: {
+    messageID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+  }
+  url: "/session/{sessionID}/deleteMessages"
+}
+
+export type SessionDeleteMessagesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionDeleteMessagesError = SessionDeleteMessagesErrors[keyof SessionDeleteMessagesErrors]
+
+export type SessionDeleteMessagesResponses = {
+  /**
+   * Updated session
+   */
+  200: Session
+}
+
+export type SessionDeleteMessagesResponse = SessionDeleteMessagesResponses[keyof SessionDeleteMessagesResponses]
+
 export type PermissionRespondData = {
   body?: {
     response: "once" | "always" | "reject"
@@ -4499,6 +4542,39 @@ export type PlanmodeReplyResponses = {
 }
 
 export type PlanmodeReplyResponse = PlanmodeReplyResponses[keyof PlanmodeReplyResponses]
+
+export type PlanmodeRejectData = {
+  body?: never
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+  }
+  url: "/planmode/{requestID}/reject"
+}
+
+export type PlanmodeRejectErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type PlanmodeRejectError = PlanmodeRejectErrors[keyof PlanmodeRejectErrors]
+
+export type PlanmodeRejectResponses = {
+  /**
+   * Plan rejected successfully
+   */
+  200: boolean
+}
+
+export type PlanmodeRejectResponse = PlanmodeRejectResponses[keyof PlanmodeRejectResponses]
 
 export type PlanmodeListData = {
   body?: never

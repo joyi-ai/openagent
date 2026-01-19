@@ -2045,6 +2045,40 @@ export namespace Server {
           },
         )
         .post(
+          "/session/:sessionID/deleteMessages",
+          describeRoute({
+            summary: "Delete messages",
+            description: "Delete messages starting from a specific message without reverting file changes.",
+            operationId: "session.deleteMessages",
+            responses: {
+              200: {
+                description: "Updated session",
+                content: {
+                  "application/json": {
+                    schema: resolver(Session.Info),
+                  },
+                },
+              },
+              ...errors(400, 404),
+            },
+          }),
+          validator(
+            "param",
+            z.object({
+              sessionID: Identifier.schema("session"),
+            }),
+          ),
+          validator("json", SessionRevert.DeleteInput.omit({ sessionID: true })),
+          async (c) => {
+            const sessionID = c.req.valid("param").sessionID
+            const session = await SessionRevert.deleteMessages({
+              sessionID,
+              ...c.req.valid("json"),
+            })
+            return c.json(session)
+          },
+        )
+        .post(
           "/session/:sessionID/permissions/:permissionID",
           describeRoute({
             summary: "Respond to permission",
