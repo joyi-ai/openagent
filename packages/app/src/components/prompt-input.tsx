@@ -204,7 +204,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       title: "Cycle agent",
       description: "Switch to the next agent",
       category: "Agent",
-      keybind: "tab,mod+.",
+      keybind: "mod+.",
       slash: "agent",
       onSelect: () => {
         local.agent.move(1)
@@ -1598,6 +1598,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Tab to cycle through agents (only when not in popover mode)
     if (event.key === "Tab" && !event.shiftKey && !store.popover && store.mode === "normal") {
       event.preventDefault()
+      event.stopPropagation()
       local.agent.move(1)
       return
     }
