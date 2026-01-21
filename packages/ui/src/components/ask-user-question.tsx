@@ -76,6 +76,11 @@ export const AskUserQuestion: Component<AskUserQuestionProps> = (props) => {
         return { ...prev, [questionIndex]: [optionLabel] }
       }
     })
+
+    // Auto-progress to next question in single-select mode
+    if (!multiSelect && questionIndex < questions().length - 1) {
+      setCurrentIndex(questionIndex + 1)
+    }
   }
 
   const toggleOther = (questionIndex: number, multiSelect: boolean) => {
