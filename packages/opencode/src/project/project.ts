@@ -17,6 +17,18 @@ import { existsSync } from "fs"
 
 export namespace Project {
   const log = Log.create({ service: "project" })
+
+  // Normalize path for comparison (case-insensitive on Windows, forward slashes)
+  function normalizePathKey(p: string): string {
+    const normalized = p.replace(/\\/g, "/")
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized
+  }
+
+  // Check if a path exists in the sandboxes array (using normalized comparison)
+  function hasSandbox(sandboxes: string[], target: string): boolean {
+    const normalizedTarget = normalizePathKey(target)
+    return sandboxes.some((s) => normalizePathKey(s) === normalizedTarget)
+  }
   export const Info = z
     .object({
       id: z.string(),
@@ -127,9 +139,13 @@ export namespace Project {
       }
     })
 
-    let existing = await Storage.read<Info>(["project", id]).catch(() => undefined)
+    // Check if project exists
+    const existing = await Storage.read<Info>(["project", id]).catch(() => undefined)
+
+    let result: Info
     if (!existing) {
-      existing = {
+      // New project - create it with this directory as the primary worktree
+      result = {
         id,
         worktree,
         vcs: vcs as Info["vcs"],
@@ -139,27 +155,43 @@ export namespace Project {
           updated: Date.now(),
         },
       }
+      // Add sandbox if different from worktree (using normalized comparison)
+      if (normalizePathKey(sandbox) !== normalizePathKey(worktree)) {
+        result.sandboxes.push(sandbox)
+      }
       if (id !== "global") {
         await migrateFromGlobal(id, worktree)
       }
+      if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(result)
+      await Storage.write<Info>(["project", id], result)
+    } else {
+      // Existing project - use atomic update to add this directory as a sandbox
+      // Keep the original worktree, don't overwrite it
+      result = await Storage.update<Info>(["project", id], (draft) => {
+        // migrate old projects before sandboxes
+        if (!draft.sandboxes) draft.sandboxes = []
+
+        // Update vcs if needed
+        if (vcs) draft.vcs = vcs as Info["vcs"]
+
+        // Add current sandbox if not already tracked (as worktree or in sandboxes)
+        const normalizedSandbox = normalizePathKey(sandbox)
+        const isWorktree = normalizePathKey(draft.worktree) === normalizedSandbox
+        const inSandboxes = hasSandbox(draft.sandboxes, sandbox)
+
+        if (!isWorktree && !inSandboxes) {
+          draft.sandboxes.push(sandbox)
+        }
+
+        // Filter out non-existent sandboxes
+        draft.sandboxes = draft.sandboxes.filter((x) => existsSync(x))
+
+        draft.time.updated = Date.now()
+      })
+
+      if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(result)
     }
 
-    // migrate old projects before sandboxes
-    if (!existing.sandboxes) existing.sandboxes = []
-
-    if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
-    const result: Info = {
-      ...existing,
-      worktree,
-      vcs: vcs as Info["vcs"],
-      time: {
-        ...existing.time,
-        updated: Date.now(),
-      },
-    }
-    if (sandbox !== result.worktree && !result.sandboxes.includes(sandbox)) result.sandboxes.push(sandbox)
-    result.sandboxes = result.sandboxes.filter((x) => existsSync(x))
-    await Storage.write<Info>(["project", id], result)
     GlobalBus.emit("event", {
       payload: {
         type: Event.Updated.type,
@@ -288,8 +320,9 @@ export namespace Project {
     if (!sandbox) return
     const result = await Storage.update<Info>(["project", projectID], (draft) => {
       if (!draft.sandboxes) draft.sandboxes = []
-      if (draft.worktree === sandbox) return
-      if (draft.sandboxes.includes(sandbox)) return
+      // Use normalized comparison for paths
+      if (normalizePathKey(draft.worktree) === normalizePathKey(sandbox)) return
+      if (hasSandbox(draft.sandboxes, sandbox)) return
       draft.sandboxes.push(sandbox)
       draft.time.updated = Date.now()
     })
@@ -304,10 +337,12 @@ export namespace Project {
 
   export async function removeSandbox(projectID: string, sandbox: string) {
     if (!sandbox) return
+    const normalizedSandbox = normalizePathKey(sandbox)
     const result = await Storage.update<Info>(["project", projectID], (draft) => {
       if (!draft.sandboxes || draft.sandboxes.length === 0) return
-      if (!draft.sandboxes.includes(sandbox)) return
-      draft.sandboxes = draft.sandboxes.filter((dir) => dir !== sandbox)
+      if (!hasSandbox(draft.sandboxes, sandbox)) return
+      // Use normalized comparison for filtering
+      draft.sandboxes = draft.sandboxes.filter((dir) => normalizePathKey(dir) !== normalizedSandbox)
       draft.time.updated = Date.now()
     })
     GlobalBus.emit("event", {

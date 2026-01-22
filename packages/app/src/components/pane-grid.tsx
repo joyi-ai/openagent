@@ -51,11 +51,6 @@ export function PaneGrid(props: PaneGridProps) {
         case "close":
           if (focusedId) multiPane.removePane(focusedId)
           break
-        case "clone":
-          if (focusedId) {
-            void multiPane.clonePane(focusedId)
-          }
-          break
         case "expand":
           if (focusedId) {
             multiPane.toggleMaximize(focusedId)

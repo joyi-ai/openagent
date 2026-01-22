@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, batch, type Accessor } from "solid-js"
 
-export type RadialDialAction = "new" | "close" | "clone" | "expand" | "history"
+export type RadialDialAction = "new" | "close" | "expand" | "history"
 
 export interface UseRadialDialOptions {
   holdDelay?: number
@@ -26,20 +26,16 @@ function angleToAction(angle: number): RadialDialAction {
   // Normalize angle to 0-360
   const normalized = ((angle % 360) + 360) % 360
 
-  // Map 5 equal segments (72° each) to actions (0 degrees = top, clockwise)
-  // Top row (left to right): Close, Expand, New
-  // Bottom row (left to right): History, Clone
-  //
-  // Close: 252-324 (top-left)
-  // Expand: 324-36 (top-center, wraps through 0°)
-  // New: 36-108 (top-right)
-  // Clone: 108-180 (bottom-right)
-  // History: 180-252 (bottom-left)
-  if (normalized >= 252 && normalized < 324) return "close"
-  if (normalized >= 324 || normalized < 36) return "expand"
-  if (normalized >= 36 && normalized < 108) return "new"
-  if (normalized >= 108 && normalized < 180) return "clone"
-  return "history"
+  // Map 4 equal segments (90° each) to actions (0 degrees = top, clockwise)
+  // Rotated 45° clockwise from corners to cardinal directions:
+  // Top: Expand (270-360)
+  // Right: New (0-90)
+  // Bottom: History (90-180)
+  // Left: Close (180-270)
+  if (normalized >= 270) return "expand"
+  if (normalized < 90) return "new"
+  if (normalized < 180) return "history"
+  return "close"
 }
 
 export function useRadialDial(options: UseRadialDialOptions): UseRadialDialReturn {

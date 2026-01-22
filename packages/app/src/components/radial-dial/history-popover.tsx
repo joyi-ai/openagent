@@ -177,7 +177,7 @@ export function HistoryPopover(props: HistoryPopoverProps) {
   return (
     <div
       ref={contentRef}
-      class="fixed z-50 w-72 max-h-96 overflow-y-auto rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95"
+      class="fixed z-50 w-72 max-h-96 overflow-y-auto no-scrollbar rounded-lg border border-border-base bg-background-base shadow-lg p-2 animate-in fade-in-0 zoom-in-95"
       style={{
         right: `calc(100vw - ${props.x}px + 8px)`,
         top: `${props.y - 100}px`,
@@ -185,7 +185,7 @@ export function HistoryPopover(props: HistoryPopoverProps) {
     >
       <div class="flex items-center gap-2 px-2 py-1.5 mb-1">
         <Icon name="history" size="small" class="text-icon-base" />
-        <span class="text-12-medium text-text-base">Session History</span>
+        <span class="text-12-medium text-text-base">{directory().split(/[/\\]/).pop()} History</span>
       </div>
       <div class="flex flex-col gap-1">
         <For each={sessions()}>
