@@ -27,7 +27,13 @@
 }
 
 *[data-tauri-drag-region] {
+  -webkit-app-region: drag;
   app-region: drag;
+}
+
+*[data-tauri-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 /* Context panel overlay styles */

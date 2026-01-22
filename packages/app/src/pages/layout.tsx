@@ -25,7 +25,9 @@ import { navStart } from "@/utils/perf"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
 import { VoiceRecordingWidget } from "@/components/voice-recording-widget"
+import { Titlebar } from "@/components/titlebar"
 import { SettingsDialog } from "@/components/settings-dialog"
+import { ShiftingGradient, GRAIN_DATA_URI } from "@/components/shifting-gradient"
 import { normalizeDirectoryKey } from "@/utils/directory"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
@@ -575,19 +577,40 @@ export default function Layout(props: ParentProps) {
     document.documentElement.style.setProperty("--dialog-left-margin", "0px")
   })
 
+  const backdropStyle = () => ({
+    "background-color": "hsl(from var(--background-base) h s l / 0.25)",
+  })
+  const grainStyle = () => ({
+    "background-image": `url("${GRAIN_DATA_URI}")`,
+    "background-repeat": "repeat",
+    "background-size": "120px 120px",
+  })
+
   return (
-    <div class="relative flex-1 min-h-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-      <div class="flex-1 min-h-0 flex">
-        <div class="relative flex-1 min-h-0">
-          <main class="size-full overflow-x-hidden flex flex-col items-start contain-strict">{props.children}</main>
-          <Show when={platform.platform === "desktop"}>
-            <div class="absolute inset-x-0 bottom-24 md:bottom-28 z-50 flex justify-center pointer-events-none">
-              <VoiceRecordingWidget />
-            </div>
-          </Show>
-        </div>
+    <div
+      class="relative flex-1 min-h-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text overflow-hidden"
+      style={{ isolation: "isolate" }}
+    >
+      <ShiftingGradient class="z-0" />
+      <div class="absolute inset-0 pointer-events-none z-10" style={backdropStyle()}>
+        <div class="absolute inset-0" style={grainStyle()} />
       </div>
-      <Toast.Region />
+      <div class="relative z-20 flex-1 min-h-0 flex flex-col">
+        <Show when={platform.platform === "desktop"}>
+          <Titlebar />
+        </Show>
+        <div class="flex-1 min-h-0 flex">
+          <div class="relative flex-1 min-h-0">
+            <main class="size-full overflow-x-hidden flex flex-col items-start contain-strict">{props.children}</main>
+            <Show when={platform.platform === "desktop"}>
+              <div class="absolute inset-x-0 bottom-24 md:bottom-28 z-50 flex justify-center pointer-events-none">
+                <VoiceRecordingWidget />
+              </div>
+            </Show>
+          </div>
+        </div>
+        <Toast.Region />
+      </div>
     </div>
   )
 }

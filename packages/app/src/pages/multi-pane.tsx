@@ -18,7 +18,6 @@ import { FileProvider } from "@/context/file"
 import { DragDropProvider, DragDropSensors, DragOverlay, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { getDraggableId } from "@/utils/solid-dnd"
-import { ShiftingGradient, GRAIN_DATA_URI } from "@/components/shifting-gradient"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -369,34 +368,7 @@ function MultiPaneContent(props: MultiPanePageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [activePaneDraggable, setActivePaneDraggable] = createSignal<string | undefined>(undefined)
   const dragOverlayBackground = "hsl(from var(--background-base) h s l / 0.55)"
-  const overlayBackground = "hsl(from var(--background-base) h s l / 0.25)"
   const paneDirectory = (pane: PaneConfig | undefined) => pane?.worktree ?? pane?.directory
-
-  const isCrisp = () => theme.activeGradientMode() === "crisp"
-  const backdropStyle = (): JSX.CSSProperties => {
-    const custom = theme.activeCustomGradient()
-    const baseBlur = isCrisp() ? 4 : 24
-    const blurAmount = custom ? baseBlur * (custom.blur / 100) : baseBlur
-    const blur = isCrisp() ? `blur(${blurAmount}px)` : `blur(${blurAmount}px) saturate(1.05)`
-    return {
-      "background-color": overlayBackground,
-      "backdrop-filter": blur,
-      "-webkit-backdrop-filter": blur,
-    }
-  }
-  const grainStyle = (): JSX.CSSProperties => {
-    const custom = theme.activeCustomGradient()
-    const baseOpacity = isCrisp() ? 0.65 : 0.24
-    const noiseOpacity = custom ? baseOpacity * (custom.noise / 100) : baseOpacity
-    return {
-      "background-image": `url("${GRAIN_DATA_URI}")`,
-      "background-repeat": "repeat",
-      "background-size": "120px 120px",
-      "mix-blend-mode": "soft-light",
-      filter: "contrast(180%)",
-      opacity: String(noiseOpacity),
-    }
-  }
 
   const visiblePanes = createMemo(() => multiPane.visiblePanes())
   const hasPanes = createMemo(() => multiPane.panes().length > 0)
@@ -729,12 +701,8 @@ function MultiPaneContent(props: MultiPanePageProps) {
   }
 
   return (
-    <div class="relative size-full flex flex-col bg-background-base overflow-hidden" style={{ isolation: "isolate" }}>
-      <ShiftingGradient class="z-0" />
-      <div class="absolute inset-0 pointer-events-none z-10" style={backdropStyle()}>
-        <div class="absolute inset-0" style={grainStyle()} />
-      </div>
-      <div class="relative z-20 flex-1 min-h-0 flex flex-col">
+    <div class="relative size-full flex flex-col overflow-hidden">
+      <div class="relative flex-1 min-h-0 flex flex-col">
         <Show
           when={hasPanes()}
           fallback={
