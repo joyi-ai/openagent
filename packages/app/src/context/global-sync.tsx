@@ -348,7 +348,12 @@ function createGlobalSync() {
     })
 
     const blockingRequests = {
-      project: () => sdk.project.current().then((x) => setStore("project", x.data!.id)),
+      project: () =>
+        sdk.project.current().then((x) => {
+          setStore("project", x.data!.id)
+          // Also add to global project cache so it's available immediately when user selects this project
+          if (x.data) addProjectToCache(x.data)
+        }),
       provider: () =>
         sdk.provider.list().then((x) => {
           const data = x.data!
@@ -471,11 +476,17 @@ function createGlobalSync() {
           break
         }
         case "project.updated": {
-          const result = Binary.search(globalStore.project, event.properties.id, (s) => s.id)
-          if (result.found) {
-            setGlobalStore("project", result.index, reconcile(event.properties))
+          // First check by worktree (multiple projects can share the same ID if they're git clones)
+          const normalizedWorktree = normalizeDirectoryKey(event.properties.worktree)
+          const existingByWorktree = globalStore.project.findIndex(
+            (p) => normalizeDirectoryKey(p.worktree) === normalizedWorktree
+          )
+          if (existingByWorktree !== -1) {
+            setGlobalStore("project", existingByWorktree, reconcile(event.properties))
             return
           }
+          // Not found by worktree, add it (sorted by ID)
+          const result = Binary.search(globalStore.project, event.properties.id, (p) => p.id)
           setGlobalStore(
             "project",
             produce((draft) => {
@@ -842,12 +853,19 @@ function createGlobalSync() {
       ),
       retry(() =>
         globalSDK.client.project.list().then(async (x) => {
-          const projects = (x.data ?? [])
+          const serverProjects = (x.data ?? [])
             .filter((p) => !!p?.id)
             .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
+          // Merge with any projects that were added by per-directory bootstraps
+          // (these might have been added before this list() completed)
+          const serverWorktrees = new Set(serverProjects.map((p) => normalizeDirectoryKey(p.worktree)))
+          const existingProjects = globalStore.project.filter(
+            (p) => !serverWorktrees.has(normalizeDirectoryKey(p.worktree))
+          )
+          const merged = [...serverProjects, ...existingProjects]
             .slice()
             .sort((a, b) => a.id.localeCompare(b.id))
-          setGlobalStore("project", projects)
+          setGlobalStore("project", merged)
         }),
       ),
       retry(() =>
@@ -876,10 +894,10 @@ function createGlobalSync() {
     if (!project?.id || !project?.worktree) return
     // Check by normalized worktree, not ID (IDs can be shared across clones)
     const normalizedWorktree = normalizeDirectoryKey(project.worktree)
-    const exists = globalStore.project.some(
+    const existingIndex = globalStore.project.findIndex(
       (p) => normalizeDirectoryKey(p.worktree) === normalizedWorktree
     )
-    if (exists) return
+    if (existingIndex !== -1) return // Already exists
     // Find the correct insertion point to keep the list sorted by ID
     const result = Binary.search(globalStore.project, project.id, (p) => p.id)
     setGlobalStore(

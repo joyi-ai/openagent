@@ -33,7 +33,12 @@ export function HomeScreen(props: HomeScreenProps) {
     if (props.selectedProject === undefined) {
       setState("project", directory)
     }
-    handleSelectWorktree(undefined)
+    // Just clear internal worktree state without propagating to parent
+    // The parent update (via onProjectSelected) will include worktree: undefined,
+    // so propagating here would cause a double update and an intermediate flash state
+    if (props.currentWorktree === undefined) {
+      setState("worktree", undefined)
+    }
     layout.projects.open(directory)
     props.onProjectSelected?.(directory)
   }
