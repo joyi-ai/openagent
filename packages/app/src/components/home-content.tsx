@@ -195,6 +195,15 @@ export function HomeContent(props: HomeContentProps) {
     }
   })
 
+  // Check if a path is a managed worktree (stored under {state}/worktree/)
+  const isManagedWorktree = (dir: string) => {
+    const stateDir = sync.data.path.state
+    if (!stateDir) return false
+    const normalized = normalizeDirectoryKey(dir)
+    const worktreeRoot = normalizeDirectoryKey(stateDir + "/worktree/")
+    return normalized.startsWith(worktreeRoot)
+  }
+
   const worktreePaths = createMemo(() => {
     const project = worktreeProject()
     if (!project) return []
@@ -209,10 +218,12 @@ export function HomeContent(props: HomeContentProps) {
       if (unique.has(key)) continue
       // Skip worktrees that have been deleted (optimistic update)
       if (deleted.has(key)) continue
+      // Only include managed worktrees (not separate clones)
+      if (!isManagedWorktree(dir)) continue
       unique.set(key, dir)
     }
     const current = props.currentWorktree
-    if (current) {
+    if (current && isManagedWorktree(current)) {
       const currentKey = normalizeDirectoryKey(current)
       if (currentKey && currentKey !== baseKey && !unique.has(currentKey) && !deleted.has(currentKey)) {
         unique.set(currentKey, current)
